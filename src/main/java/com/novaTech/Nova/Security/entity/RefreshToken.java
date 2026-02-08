@@ -1,0 +1,32 @@
+package com.novaTech.Nova.Security.entity;
+
+import com.novaTech.Nova.Entities.User;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.time.Instant;
+
+@Data
+@Entity
+@Table(name = "refresh_tokens") // match the actual DB table
+@AllArgsConstructor
+@NoArgsConstructor
+public class RefreshToken {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String token;
+
+    @OneToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "user_id", referencedColumnName = "id", nullable = false, unique = true)
+    private User user;
+
+    @Column(name = "expiry_date", nullable = false)
+    private Instant expiryDate;
+
+}

@@ -1,0 +1,280 @@
+package com.novaTech.Nova.controller;
+
+import com.novaTech.Nova.DTO.DocumentProcessRequest;
+import com.novaTech.Nova.DTO.DocumentProcessResponse;
+import com.novaTech.Nova.DTO.DocumentUploadResponse;
+import com.novaTech.Nova.DTO.ProcessingHistoryResponse;
+import com.novaTech.Nova.Entities.Document;
+import com.novaTech.Nova.Entities.Enums.FunctionalityType;
+import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Services.DocumentProcessingService;
+import com.novaTech.Nova.Services.DocumentService;
+import com.novaTech.Nova.Services.UserRegistrationService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Slf4j
+@RestController
+@RequestMapping("/api/v1/documents")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*")
+public class DocumentController {
+
+    private final DocumentService documentService;
+    private final DocumentProcessingService processingService;
+    private final UserRegistrationService userService;
+
+    /**
+     * Extract user from JWT token in Authorization header
+     */
+    private User extractUser(String authHeader) {
+        return userService.getUserFromToken(authHeader);
+    }
+
+    /**
+     * Upload document only (without AI processing)
+     */
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<DocumentUploadResponse> uploadDocument(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestPart("file") MultipartFile file) {
+
+        User user = extractUser(authHeader);
+        log.info("POST /api/v1/documents/upload - Uploading file: {} for user: {}",
+                file.getOriginalFilename(), user.getUsername());
+
+        try {
+            DocumentUploadResponse response = documentService.uploadDocument(file, user);
+            if (response.isSuccess()) {
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.badRequest().body(response);
+            }
+        } catch (Exception e) {
+            log.error("Error uploading document", e);
+            DocumentUploadResponse errorResponse = DocumentUploadResponse.builder()
+                    .success(false)
+                    .error(e.getMessage())
+                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+        }
+    }
+
+    /**
+     * Upload and process document in one call (NotebookLM-style)
+     */
+    @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<DocumentProcessResponse> processDocument(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam("functionality") FunctionalityType functionality,
+            @RequestParam(value = "question", required = false) String question,
+            @RequestParam(value = "customPrompt", required = false) String customPrompt) {
+
+        User user = extractUser(authHeader);
+        log.info("POST /api/v1/documents/process - Processing file: {} with functionality: {} for user: {}",
+                file.getOriginalFilename(), functionality, user.getUsername());
+
+        try {
+            DocumentProcessRequest request = DocumentProcessRequest.builder()
+                    .functionality(functionality)
+                    .question(question)
+                    .customPrompt(customPrompt)
+                    .build();
+
+            DocumentProcessResponse response = processingService.processDocument(file, request, user);
+
+            if (response.isSuccess()) {
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            }
+        } catch (Exception e) {
+            log.error("Error processing document", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(DocumentProcessResponse.builder()
+                            .success(false)
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+
+    /**
+     * Process existing document with AI
+     */
+    @PostMapping("/{documentId}/process")
+    public ResponseEntity<DocumentProcessResponse> processExistingDocument(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long documentId,
+            @Valid @RequestBody DocumentProcessRequest request) {
+
+        User user = extractUser(authHeader);
+        log.info("POST /api/v1/documents/{}/process - Functionality: {} for user: {}",
+                documentId, request.getFunctionality(), user.getUsername());
+
+        try {
+            DocumentProcessResponse response =
+                    processingService.processExistingDocument(documentId, request, user);
+
+            if (response.isSuccess()) {
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+            }
+        } catch (Exception e) {
+            log.error("Error processing existing document", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(DocumentProcessResponse.builder()
+                            .success(false)
+                            .error(e.getMessage())
+                            .build());
+        }
+    }
+
+    /**
+     * Get all documents for current user
+     */
+    @GetMapping
+    public ResponseEntity<List<Document>> getUserDocuments(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+
+        User user = extractUser(authHeader);
+        log.info("GET /api/v1/documents - Getting all documents for user: {}", user.getUsername());
+
+        try {
+            List<Document> documents = documentService.getUserDocuments(user);
+            return ResponseEntity.ok(documents);
+        } catch (Exception e) {
+            log.error("Error getting user documents", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Get document by ID (user-specific)
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getDocumentById(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id) {
+
+        User user = extractUser(authHeader);
+        log.info("GET /api/v1/documents/{} for user: {}", id, user.getUsername());
+
+        try {
+            Document document = documentService.getDocumentById(id, user);
+            return ResponseEntity.ok(document);
+        } catch (Exception e) {
+            log.error("Document not found: {}", id);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(java.util.Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Delete document (user-specific)
+     */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteDocument(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id) {
+
+        User user = extractUser(authHeader); // ✅ Single fetch
+        log.info("DELETE /api/v1/documents/{} for user: {}", id, user.getUsername());
+
+        try {
+            documentService.deleteDocument(id, user);
+            return ResponseEntity.ok().body(java.util.Map.of("message", "Document deleted successfully"));
+        } catch (Exception e) {
+            log.error("Error deleting document: {}", id, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Get processing history for a document (user-specific)
+     */
+    @GetMapping("/{id}/history")
+    public ResponseEntity<?> getDocumentHistory(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
+            @PathVariable Long id) {
+
+        User user = extractUser(authHeader);
+        log.info("GET /api/v1/documents/{}/history for user: {}", id, user.getUsername());
+
+        try {
+            List<ProcessingHistoryResponse> history = processingService.getDocumentHistory(id, user);
+            return ResponseEntity.ok(history);
+        } catch (Exception e) {
+            log.error("Error getting document history: {}", id, e);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(java.util.Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Get user's document count
+     */
+    @GetMapping("/count")
+    public ResponseEntity<?> getUserDocumentCount(
+            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+
+        User user = extractUser(authHeader);
+        log.info("GET /api/v1/documents/count for user: {}", user.getUsername());
+
+        try {
+            Long count = documentService.getUserDocumentCount(user);
+            return ResponseEntity.ok(java.util.Map.of("count", count));
+        } catch (Exception e) {
+            log.error("Error getting document count", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(java.util.Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Get available functionalities
+     */
+    @GetMapping("/functionalities")
+    public ResponseEntity<List<FunctionalityInfo>> getFunctionalities() {
+        log.info("GET /api/v1/documents/functionalities");
+
+        List<FunctionalityInfo> functionalities = Arrays.stream(FunctionalityType.values())
+                .map(type -> new FunctionalityInfo(
+                        type.name(),
+                        type.getDescription(),
+                        type.getDefaultModel()
+                ))
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(functionalities);
+    }
+
+    /**
+     * Health check
+     */
+    @GetMapping("/health")
+    public ResponseEntity<HealthResponse> healthCheck() {
+        return ResponseEntity.ok(new HealthResponse(
+                true,
+                "Document AI Assistant is running",
+                System.currentTimeMillis()
+        ));
+    }
+
+    // Inner classes for responses
+    record FunctionalityInfo(String name, String description, String defaultModel) {}
+    record HealthResponse(boolean healthy, String message, long timestamp) {}
+}
