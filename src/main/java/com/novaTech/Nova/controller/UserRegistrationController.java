@@ -3,6 +3,7 @@ package com.novaTech.Nova.controller;
 import com.novaTech.Nova.DTO.*;
 import com.novaTech.Nova.Entities.User;
 import com.novaTech.Nova.Security.TokenService;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.UserRegistrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,11 +11,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
@@ -29,60 +31,47 @@ import java.util.UUID;
 public class UserRegistrationController {
 
     private final UserRegistrationService userRegistrationService;
-    private final TokenService tokenService;
 
-    private User getUserFromToken(String authHeader) {
-        log.info("Auth header received {}", authHeader);
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            log.warn("Missing or invalid Authorization header");
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Missing or invalid Authorization header"
-            );
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
         }
 
-        String token = authHeader.substring(7);
+        Object principal = authentication.getPrincipal();
 
-        String email;
-        try {
-            email = tokenService.getEmailFromAccessToken(token);
-        } catch (Exception e) {
-            log.info("Invalid or expired token");
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid or expired token"
-            );
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
         }
 
-        return userRegistrationService.findByEmail(email);
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
     }
-
 
     // =========================
     // Register User
-    // =========================
     @PostMapping(value = "/register", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> registerUser(
-            @RequestParam("firstName") String firstName,
-            @RequestParam("lastName") String lastName,
-            @RequestParam("email") String email,
-            @RequestParam("username") String username,
-            @RequestParam("password") String password,
-            @RequestParam("confirmPassword") String confirmPassword,
-            @RequestParam(value = "profileImage", required = false) MultipartFile profileImage,
-            @RequestParam(value = "mfaEnabled", defaultValue = "false") boolean mfaEnabled
+            @ModelAttribute UserRegistrationDTO userDto,
+            @RequestParam(value = "profileImage", required = false) MultipartFile profileImage
     ) {
         try {
+            // Trim all input strings to remove leading/trailing spaces
             UserRegistrationDTO dto = UserRegistrationDTO.builder()
-                    .firstName(firstName)
-                    .lastName(lastName)
-                    .email(email)
-                    .username(username)
-                    .password(password)
-                    .confirmPassword(confirmPassword)
+                    .firstName(trimString(userDto.getFirstName()))
+                    .lastName(trimString(userDto.getLastName()))
+                    .email(trimString(userDto.getEmail()))
+                    .username(trimString(userDto.getUsername()))
+                    .password(userDto.getPassword())
+                    .confirmPassword(userDto.getConfirmPassword())
                     .profileImage(profileImage)
-                    .mfaEnabled(mfaEnabled)
+                    .mfaEnabled(userDto.isMfaEnabled())
                     .build();
 
             UserResponseDTO response = userRegistrationService.createUser(dto);
@@ -93,48 +82,39 @@ public class UserRegistrationController {
             ));
 
         } catch (RuntimeException | IOException e) {
-            log.error("Error registering user: {}", e.getMessage());
+            log.error("Error registering user: {}", e.getMessage(), e);
             return ResponseEntity.badRequest().body(Map.of(
                     "error", e.getMessage()
             ));
         }
     }
 
-
+    // Helper method to safely trim strings
+    private String trimString(String value) {
+        return value != null ? value.trim() : null;
+    }
 
     // ========================
     // UPDATE AUTHENTICATED USER
     // ========================
     @PutMapping(value = "/me", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> updateMyProfile(
-            @RequestParam(value = "firstName", required = false) String firstName,
-            @RequestParam(value = "lastName", required = false) String lastName,
-            @RequestParam(value = "username", required = false) String username,
-            @RequestParam(value = "email", required = false) String email,
-            @RequestParam(value = "password", required = false) String password,
-            @RequestParam(value = "confirmPassword", required = false) String confirmPassword,
-            @RequestParam(value = "profileImage", required = false) MultipartFile profileImage,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader
+            @ModelAttribute UpdateUserDTO updateDto,
+            @RequestParam(value = "profileImage", required = false) MultipartFile profileImage
     ) {
         try {
-            com.novaTech.Nova.Entities.User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
 
-            UserRegistrationDTO dto = UserRegistrationDTO.builder()
-                    .firstName(firstName)
-                    .lastName(lastName)
-                    .username(username)
-                    .email(email)
-                    .password(password)
-                    .confirmPassword(confirmPassword)
-                    .profileImage(profileImage)
-                    .build();
+            UpdateUserDTO dto = new UpdateUserDTO(
+                    trimString(updateDto.firstName()),
+                    trimString(updateDto.lastName()),
+                    trimString(updateDto.username()),
+                    trimString(updateDto.email()),
+                    profileImage
+            );
 
-            UserResponseDTO response = userRegistrationService.updateUser(user.getId(), dto);
+            UserResponseDTO response = userRegistrationService.updateUser(userId, dto);
 
             return ResponseEntity.ok(Map.of(
                     "message", "Profile updated successfully",
@@ -142,7 +122,7 @@ public class UserRegistrationController {
             ));
 
         } catch (RuntimeException | IOException e) {
-            log.error("Error updating profile: {}", e.getMessage());
+            log.error("Error updating profile: {}", e.getMessage(), e);
             return ResponseEntity.badRequest().body(Map.of(
                     "error", e.getMessage()
             ));
@@ -150,32 +130,34 @@ public class UserRegistrationController {
     }
 
 
-
     // ========================
     // GET AUTHENTICATED USER DETAILS
     // ========================
     @GetMapping("/me")
-    public ResponseEntity<?> getMyDetails(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getMyDetails() {
         try {
-            UserResponseDTO response = userRegistrationService.getAuthenticatedUserDetails(authHeader);
+            UserDetails principal = userPrincipal();
+            String username = principal.getUsername();
+            UserResponseDTO response = userRegistrationService.getAuthenticatedUser(username);
             return ResponseEntity.ok(response);
+
         } catch (RuntimeException e) {
-            log.error("Error fetching authenticated user details: {}", e.getMessage());
+            log.error("Error fetching authenticated user details: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                     "error", e.getMessage()
             ));
         }
     }
 
-
-
     // ========================
     // GET AUTHENTICATED USER'S PROFILE IMAGE
     // ========================
     @GetMapping("/me/profile-image")
-    public ResponseEntity<byte[]> getMyProfileImage(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<byte[]> getMyProfileImage() {
         try {
-            byte[] imageBytes = userRegistrationService.getAuthenticatedUserProfileImage(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+            byte[] imageBytes = userRegistrationService.getAuthenticatedUserProfileImage(username);
 
             HttpHeaders headers = new HttpHeaders();
             MediaType contentType = userRegistrationService.determineImageType(imageBytes);
@@ -186,7 +168,7 @@ public class UserRegistrationController {
             return new ResponseEntity<>(imageBytes, headers, HttpStatus.OK);
 
         } catch (RuntimeException e) {
-            log.error("Error fetching authenticated user profile image: {}", e.getMessage());
+            log.error("Error fetching authenticated user profile image: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
     }
@@ -198,15 +180,17 @@ public class UserRegistrationController {
     // DELETE AUTHENTICATED USER'S PROFILE IMAGE
     // ========================
     @DeleteMapping("/me/profile-image")
-    public ResponseEntity<?> deleteMyProfileImage(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> deleteMyProfileImage() {
         try {
-            UserResponseDTO response = userRegistrationService.deleteAuthenticatedUserProfileImage(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String  username = principal.getUsername();
+            UserResponseDTO response = userRegistrationService.deleteAuthenticatedUserProfileImage(username);
             return ResponseEntity.ok(Map.of(
                     "message", "Profile image deleted successfully",
                     "user", response
             ));
         } catch (RuntimeException e) {
-            log.error("Error deleting authenticated user profile image: {}", e.getMessage());
+            log.error("Error deleting authenticated user profile image: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                     "error", e.getMessage()
             ));
@@ -214,31 +198,26 @@ public class UserRegistrationController {
     }
 
 
-    // to udpate password
+    // to update password
     @PatchMapping("/change-password")
-    public ResponseEntity<String> changePassword(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @RequestBody ChangePasswordDTO dto) {
+    public ResponseEntity<String> changePassword(@RequestBody ChangePasswordDTO dto) {
         log.info("Password change request received");
         log.info("Extracting user email from token");
-        User user = getUserFromToken(authHeader);
-
+        UserPrincipal principal = userPrincipal();
+        String  username = principal.getUsername();
         log.info("User email extracted successfully");
-        String email = user.getEmail();
-        String response = userRegistrationService.changePassword(email, dto);
+        String response = userRegistrationService.changePassword(username, dto);
         return ResponseEntity.ok(response);
     }
 
 
 
     @GetMapping("/next/profile-image")
-    public ResponseEntity<byte[]> getProfileImage(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
-        User user = getUserFromToken(authHeader);
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
+    public ResponseEntity<byte[]> getProfileImage() {
+        UserPrincipal principal = userPrincipal();
+        UUID userId = principal.getUserId();
         // Fetch user within a transactional method to ensure lazy-loaded fields are accessible
-        user = userRegistrationService.getUserById(user.getId());
+        User user = userRegistrationService.getUserById(userId);
 
         if (user == null || user.getProfileImage() == null || user.getProfileImage().isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
@@ -456,24 +435,24 @@ public class UserRegistrationController {
     // Disable MFA
     // =========================
     @PostMapping("/disable-mfa")
-    public ResponseEntity<String> disableMfa(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<String> disableMfa() {
         log.info("Disable MFA request received");
         log.info("Extracting user email from token");
-        User user = getUserFromToken(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username =  principal.getUsername();
         log.info("User email extracted successfully");
-        String email = user.getEmail();
-        String response = userRegistrationService.disableMFA(email);
+        String response = userRegistrationService.disableMFA(username);
         return ResponseEntity.ok(response);
     }
 
 
     @PostMapping("/enable-mfa")
-    public ResponseEntity<NewMfaKeys> enableMfa(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<NewMfaKeys> enableMfa() {
         log.info("Enabling mfa request received");
         log.info("Extracting user id from token");
-        User user = getUserFromToken(authHeader);
+        UserPrincipal principal = userPrincipal();
+        UUID userId =  principal.getUserId();
         log.info("User id extracted successfully");
-        UUID userId = user.getId();
         NewMfaKeys keys = userRegistrationService.enableMFA(userId);
         return ResponseEntity.ok(keys);
     }

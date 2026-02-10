@@ -3,6 +3,7 @@ package com.novaTech.Nova.controller;
 import com.novaTech.Nova.DTO.ProcessingHistoryResponse;
 import com.novaTech.Nova.Entities.Enums.Role;
 import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.DocumentProcessingService;
 import com.novaTech.Nova.Services.UserRegistrationService;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,25 +25,42 @@ import java.util.List;
 public class HistoryController {
 
     private final DocumentProcessingService processingService;
-    private final UserRegistrationService userService;
+    private final UserRegistrationService userRegistrationService;
 
-    /**
-     * Extract user from JWT token in Authorization header
-     */
-    private User extractUser(String authHeader) {
-        return userService.getUserFromToken(authHeader);
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
+        }
+
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
     }
 
     /**
      * Get all processing history for current user
      */
     @GetMapping
-    public ResponseEntity<List<ProcessingHistoryResponse>> getUserHistory(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<List<ProcessingHistoryResponse>> getUserHistory() {
 
-        User user = extractUser(authHeader); // ✅ Single fetch
-        log.info("GET /api/v1/history - Getting all processing history for user: {}", user.getUsername());
+      UserPrincipal principal = userPrincipal();
+      String username = principal.getUsername();// ✅ Single fetch
+        log.info("GET /api/v1/history - Getting all processing history for user: {}", username);
 
+        User user = userRegistrationService.findByEmail(username);
+        log.info("GET /api/v1/history - Processing history for user: {}", username);
         try {
             List<ProcessingHistoryResponse> history = processingService.getUserHistory(user);
             return ResponseEntity.ok(history);
@@ -54,11 +74,12 @@ public class HistoryController {
      * Get history by functionality type for current user
      */
     @GetMapping("/functionality/{type}")
-    public ResponseEntity<List<ProcessingHistoryResponse>> getUserHistoryByFunctionality(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @PathVariable String type) {
+    public ResponseEntity<List<ProcessingHistoryResponse>> getUserHistoryByFunctionality(@PathVariable String type) {
 
-        User user = extractUser(authHeader); // ✅ Single fetch
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userRegistrationService.findByEmail(username);
         log.info("GET /api/v1/history/functionality/{} for user: {}", type, user.getUsername());
 
         try {
@@ -75,10 +96,12 @@ public class HistoryController {
      * Get all processing history (admin only)
      */
     @GetMapping("/admin/all")
-    public ResponseEntity<?> getAllHistory(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getAllHistory() {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userRegistrationService.findByEmail(username);
 
         // ✅ Check if user is admin
         if (user.getRole() != Role.ADMIN) {
@@ -103,11 +126,11 @@ public class HistoryController {
      * Get history by functionality (admin only)
      */
     @GetMapping("/admin/functionality/{type}")
-    public ResponseEntity<?> getHistoryByFunctionality(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @PathVariable String type) {
+    public ResponseEntity<?> getHistoryByFunctionality(@PathVariable String type) {
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
 
-        User user = extractUser(authHeader);
+        User user = userRegistrationService.findByEmail(username);
 
         // ✅ Check if user is admin
         if (user.getRole() != Role.ADMIN) {

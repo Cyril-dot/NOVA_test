@@ -16,6 +16,7 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    // Handle file size exceeded
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleMaxUploadSizeExceeded(
             MaxUploadSizeExceededException e) {
@@ -26,6 +27,7 @@ public class GlobalExceptionHandler {
         );
     }
 
+    // Handle illegal arguments
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(
             IllegalArgumentException e) {
@@ -33,6 +35,7 @@ public class GlobalExceptionHandler {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
+    // Handle validation errors
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidationException(
             MethodArgumentNotValidException e) {
@@ -48,27 +51,54 @@ public class GlobalExceptionHandler {
         response.put("error", "Validation failed");
         response.put("details", errors);
         response.put("timestamp", LocalDateTime.now());
+        response.put("status", HttpStatus.BAD_REQUEST.value());
 
         return ResponseEntity.badRequest().body(response);
     }
 
+    // Handle resource not found
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleResourceNotFound(ResourceNotFoundException ex) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Resource Not Found", ex.getMessage());
+    }
+
+    // Handle unauthorized access
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<Map<String, Object>> handleUnauthorized(UnauthorizedException ex) {
+        return buildErrorResponse(HttpStatus.FORBIDDEN, "Unauthorized", ex.getMessage());
+    }
+
+    // Handle bad request
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<Map<String, Object>> handleBadRequest(BadRequestException ex) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
+    }
+
+    // Handle generic exceptions
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGenericException(Exception e) {
         log.error("Unexpected error", e);
-        return buildErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR,
-                "An unexpected error occurred: " + e.getMessage()
-        );
+        return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred",
+                e.getMessage());
     }
 
+    // Helper method
     private ResponseEntity<Map<String, Object>> buildErrorResponse(
-            HttpStatus status, String message) {
+            HttpStatus status, String error, String message) {
         Map<String, Object> response = new HashMap<>();
         response.put("success", false);
-        response.put("error", message);
+        response.put("error", error);
+        response.put("message", message);
         response.put("timestamp", LocalDateTime.now());
         response.put("status", status.value());
 
         return ResponseEntity.status(status).body(response);
+    }
+
+    // Overloaded helper for simpler errors
+    private ResponseEntity<Map<String, Object>> buildErrorResponse(
+            HttpStatus status, String message) {
+        return buildErrorResponse(status, message, message);
     }
 }

@@ -8,6 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+
 @Data
 @Builder
 public class UserResponseDTO {
@@ -22,4 +23,7 @@ public class UserResponseDTO {
     private String mfaSecret;
     private Integer mfaCode;
     private LocalDateTime generatedAt;
+
+    private String profileImage; // add this
 }
+

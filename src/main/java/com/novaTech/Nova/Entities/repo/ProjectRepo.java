@@ -53,6 +53,10 @@ public interface ProjectRepo extends JpaRepository<Project, UUID> {
     // Find projects with end date before specified date and status not equal to specified status
     List<Project> findByEndDateBeforeAndStatusNot(LocalDate endDate, ProjectStatus status);
 
+    // Get all projects ordered by most recent
+    // Find all projects for a user ordered by most recent
+    List<Project> findByUserOrderByCreatedAtDesc(User user);
+
     // Find projects with end date between two dates and status not equal to specified status
     List<Project> findByEndDateBetweenAndStatusNot(LocalDate startDate, LocalDate endDate, ProjectStatus status);
 }

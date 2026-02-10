@@ -5,6 +5,7 @@ import com.novaTech.Nova.DTO.ChatResponse;
 import com.novaTech.Nova.DTO.ExternalChatRequest;
 import com.novaTech.Nova.Entities.Enums.Model;
 import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.ExternalChatService;
 import com.novaTech.Nova.Services.UserRegistrationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,10 +16,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -42,8 +46,26 @@ public class ExternalChatController {
         log.info("=".repeat(80) + "\n");
     }
 
-    private User extractUser(String authHeader) {
-        return userService.getUserFromToken(authHeader);
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
+        }
+
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
     }
 
     /**
@@ -52,10 +74,16 @@ public class ExternalChatController {
     @PostMapping("/message")
     @Operation(summary = "Send external API chat message and get response (Netflix, Spotify, Weather, etc.)")
     public ResponseEntity<ChatResponse> sendExternalMessage(
-            @RequestBody ExternalChatRequest request,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @RequestBody ExternalChatRequest request) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
 
         log.info("🌐 [EXTERNAL-CHAT] User: {} | Model: {} | Message: '{}'",
                 user.getEmail(),
@@ -76,10 +104,16 @@ public class ExternalChatController {
     @PostMapping(value = "/message/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "Send external API chat message and get streaming response")
     public Flux<String> sendExternalMessageStream(
-            @RequestBody ExternalChatRequest request,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @RequestBody ExternalChatRequest request) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
 
         log.info("🌊 [EXTERNAL-CHAT-STREAM] User: {} | Model: {}", user.getEmail(), request.getModel());
 
@@ -90,10 +124,17 @@ public class ExternalChatController {
 
     @GetMapping("/list")
     @Operation(summary = "Get all external API chats for the current user")
-    public ResponseEntity<List<ChatHistoryResponse>> getUserExternalChats(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<List<ChatHistoryResponse>> getUserExternalChats() {
 
-        User user = extractUser(authHeader);
+        UserPrincipal userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
+
         List<ChatHistoryResponse> chats = externalChatService.getUserExternalChats(user);
 
         log.info("📋 [EXTERNAL-CHAT] Found {} external chats for {}", chats.size(), user.getEmail());
@@ -103,10 +144,16 @@ public class ExternalChatController {
     @GetMapping("/{chatId}")
     @Operation(summary = "Get full external chat history by chat ID")
     public ResponseEntity<ChatHistoryResponse> getExternalChatHistory(
-            @PathVariable Long chatId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @PathVariable Long chatId) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
         ChatHistoryResponse history = externalChatService.getExternalChatHistory(chatId, user);
 
         return ResponseEntity.ok(history);
@@ -115,10 +162,16 @@ public class ExternalChatController {
     @PostMapping("/new")
     @Operation(summary = "Create a new external chat")
     public ResponseEntity<ChatHistoryResponse> createNewExternalChat(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
             @RequestParam Model model) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal  userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
         var chat = externalChatService.createNewChat(user, model);
 
         ChatHistoryResponse response = ChatHistoryResponse.builder()
@@ -135,10 +188,17 @@ public class ExternalChatController {
     @DeleteMapping("/{chatId}")
     @Operation(summary = "Delete an external chat")
     public ResponseEntity<Void> deleteExternalChat(
-            @PathVariable Long chatId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @PathVariable Long chatId) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
+
         externalChatService.deleteExternalChat(chatId, user);
 
         return ResponseEntity.noContent().build();
@@ -147,12 +207,70 @@ public class ExternalChatController {
     @PostMapping("/{chatId}/clear")
     @Operation(summary = "Clear all messages from an external chat")
     public ResponseEntity<Void> clearExternalChat(
-            @PathVariable Long chatId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @PathVariable Long chatId) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal userPrincipal = userPrincipal();
+        String username = userPrincipal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("Invalid username: {}", username);
+            throw new RuntimeException("Invalid username");
+        }
         externalChatService.clearExternalChat(chatId, user);
 
         return ResponseEntity.noContent().build();
     }
+
+
+    // ========================
+    // GENERAL CHAT SEARCH (searches in title and message content)
+    // ========================
+    @GetMapping("/search")
+    public ResponseEntity<?> generalSearchChats(@RequestParam String keyword) {
+        try {
+            UserPrincipal principal = userPrincipal();
+            User user = userService.getUserById(principal.getUserId());
+
+            List<ChatHistoryResponse> chats = externalChatService.generalSearchOfChats(keyword, user);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Search completed successfully",
+                    "count", chats.size(),
+                    "chats", chats
+            ));
+
+        } catch (RuntimeException e) {
+            log.error("Error searching chats: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", e.getMessage()
+            ));
+        }
+    }
+
+    // ========================
+    // SEARCH CHATS BY TITLE ONLY
+    // ========================
+    @GetMapping("/search/title")
+    public ResponseEntity<?> searchChatsByTitle(@RequestParam String title) {
+        try {
+            UserPrincipal principal = userPrincipal();
+            User user = userService.getUserById(principal.getUserId());
+
+            List<ChatHistoryResponse> chats = externalChatService.searchChatsByTitle(title, user);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Search completed successfully",
+                    "count", chats.size(),
+                    "chats", chats
+            ));
+
+        } catch (RuntimeException e) {
+            log.error("Error searching chats by title: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", e.getMessage()
+            ));
+        }
+    }
+
 }

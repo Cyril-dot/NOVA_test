@@ -1,0 +1,53 @@
+    // compress image
+    // use onceperrequestfilter
+    // define a thread pul executor
+    // encrypt token and decrypt
+    // create two set of active profiles , so two instances of security
+    // implement swagger
+
+
+    // ngrok
+    // ai histroy done
+    // notebook llm done
+
+
+
+     // Reactions
+        @PostMapping("/messages/{messageId}/reactions")
+        public ResponseEntity<MessageReaction> addReaction(
+                @PathVariable Long messageId,
+                @RequestParam String emoji) {
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(reactionService.addReaction(messageId, userId, emoji));
+        }
+
+        @DeleteMapping("/messages/{messageId}/reactions")
+        public ResponseEntity<Void> removeReaction(
+                @PathVariable Long messageId) {
+            UUID userId = userPrincipal().getUserId();
+            reactionService.removeReaction(messageId, userId);
+            return ResponseEntity.ok().build();
+        }
+
+        // Starred Messages
+        @PostMapping("/messages/{messageId}/star")
+        public ResponseEntity<StarredMessage> starMessage(
+                @PathVariable Long messageId,
+                @RequestParam(required = false) String notes) {
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(starredService.starMessage(messageId, userId, notes));
+        }
+
+        @DeleteMapping("/messages/{messageId}/star")
+        public ResponseEntity<Void> unstarMessage(
+                @PathVariable Long messageId) {
+            UUID userId = userPrincipal().getUserId();
+            starredService.unstarMessage(messageId, userId);
+            return ResponseEntity.ok().build();
+        }
+
+        @GetMapping("/starred")
+        public ResponseEntity<List<StarredMessage>> getStarredMessages() {
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(starredService.getUserStarredMessages(userId));
+        }

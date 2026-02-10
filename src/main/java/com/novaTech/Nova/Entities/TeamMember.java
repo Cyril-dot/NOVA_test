@@ -34,6 +34,9 @@ public class TeamMember {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @Column(name = "is_active")
+    private Boolean isActive = true;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TeamStatus role; // ADMIN or MEMBER

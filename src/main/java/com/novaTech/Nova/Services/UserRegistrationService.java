@@ -34,10 +34,9 @@ public class UserRegistrationService {
     private final MfaService mfaService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
-
     // ========================
-    // CREATE USER
-    // ========================
+// CREATE USER
+// ========================
     public UserResponseDTO createUser(UserRegistrationDTO dto) throws IOException {
 
         if (userRepo.findByEmail(dto.getEmail()).isPresent()) {
@@ -117,10 +116,16 @@ public class UserRegistrationService {
 
         User savedUser = userRepo.save(user);
 
-
-            log.info("Sending account creation email to: {}", user.getEmail());
-            emailService.sendAccountCreationEmail(user.getEmail());
-            log.info("Account creation email sent successfully to: {}", user.getEmail());
+        // Send email AFTER transaction completes (wrapped in try-catch)
+        try {
+            log.info("Sending account creation email to: {}", savedUser.getEmail());
+            emailService.sendAccountCreationEmail(savedUser.getEmail());
+            log.info("Account creation email sent successfully to: {}", savedUser.getEmail());
+        } catch (Exception e) {
+            log.error("Failed to send account creation email to: {}. Error: {}",
+                    savedUser.getEmail(), e.getMessage(), e);
+            // User is still created successfully even if email fails
+        }
 
         // Verify the image was saved correctly
         if (profileImageFile != null && !profileImageFile.isEmpty()) {
@@ -135,34 +140,26 @@ public class UserRegistrationService {
     // ========================
     // UPDATE USER
     // ========================
-    public UserResponseDTO updateUser(UUID userId, UserRegistrationDTO dto) throws IOException {
+    public UserResponseDTO updateUser(UUID userId, UpdateUserDTO dto) throws IOException {
         User user = getUserById(userId);
         if (user == null) throw new RuntimeException("User does not exist");
 
         // Update fields only if provided (not null/blank)
-        if (dto.getFirstName() != null && !dto.getFirstName().isBlank()) {
-            user.setFirstName(dto.getFirstName());
+        if (dto.firstName() != null && !dto.firstName().isBlank()) {
+            user.setFirstName(dto.firstName());
         }
-        if (dto.getLastName() != null && !dto.getLastName().isBlank()) {
-            user.setLastName(dto.getLastName());
+        if (dto.lastName() != null && !dto.lastName().isBlank()) {
+            user.setLastName(dto.lastName());
         }
-        if (dto.getUsername() != null && !dto.getUsername().isBlank()) {
-            user.setUsername(dto.getUsername());
+        if (dto.username() != null && !dto.username().isBlank()) {
+            user.setUsername(dto.username());
         }
-        if (dto.getEmail() != null && !dto.getEmail().isBlank()) {
-            user.setEmail(dto.getEmail());
-        }
-
-        // Update password if provided
-        if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
-            if (!dto.getPassword().equals(dto.getConfirmPassword())) {
-                throw new RuntimeException("Passwords do not match");
-            }
-            user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        if (dto.email() != null && !dto.email().isBlank()) {
+            user.setEmail(dto.email());
         }
 
-        // ===== Base64 profile image update =====
-        MultipartFile profileImageFile = dto.getProfileImage();
+        // ===== Profile image update =====
+        MultipartFile profileImageFile = dto.profileImage();
         if (profileImageFile != null && !profileImageFile.isEmpty()) {
             try {
                 // Validate file size (10MB max)
@@ -211,7 +208,6 @@ public class UserRegistrationService {
 
         return buildUserResponse(savedUser);
     }
-
     // ========================
     // GET PROFILE IMAGE
     // ========================
@@ -239,37 +235,25 @@ public class UserRegistrationService {
     // GET USER DETAILS
     // ========================
     @Transactional(readOnly = true)
-    public UserResponseDTO getUserDetails(UUID userId) {
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        return buildUserResponse(user);
-    }
-
-    // ========================
-    // GET AUTHENTICATED USER DETAILS
-    // ========================
-    @Transactional(readOnly = true)
-    public UserResponseDTO getAuthenticatedUserDetails(String authHeader) {
-        User user = getUserFromToken(authHeader);
+    public UserResponseDTO getAuthenticatedUser(String email) {
+        User user = userRepo.findByUserEmail(email);
         if (user == null) {
+            log.error("User does not exist");
             throw new RuntimeException("Invalid authentication token");
         }
 
-        // Fetch full user details
-        user = userRepo.findById(user.getId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
         return buildUserResponse(user);
     }
+
 
     // ========================
     // GET AUTHENTICATED USER PROFILE IMAGE
     // ========================
     @Transactional(readOnly = true)
-    public byte[] getAuthenticatedUserProfileImage(String authHeader) {
-        User user = getUserFromToken(authHeader);
+    public byte[] getAuthenticatedUserProfileImage(String email) {
+        User user = userRepo.findByUserEmail(email);
         if (user == null) {
+            log.error("User does not exist");
             throw new RuntimeException("Invalid authentication token");
         }
 
@@ -296,9 +280,10 @@ public class UserRegistrationService {
     // DELETE AUTHENTICATED USER PROFILE IMAGE
     // ========================
     @Transactional
-    public UserResponseDTO deleteAuthenticatedUserProfileImage(String authHeader) {
-        User user = getUserFromToken(authHeader);
+    public UserResponseDTO deleteAuthenticatedUserProfileImage(String email) {
+        User user = userRepo.findByUserEmail(email);
         if (user == null) {
+            log.error("User does not exist");
             throw new RuntimeException("Invalid authentication token");
         }
 
@@ -367,73 +352,6 @@ public class UserRegistrationService {
         return MediaType.IMAGE_PNG;
     }
 
-    public User getUserFromToken(String authHeader) {
-        log.info("======== GET USER FROM TOKEN - START ========");
-
-        // Validate header
-        if (authHeader == null || authHeader.isBlank()) {
-            log.error("Missing Authorization header");
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Missing Authorization header"
-            );
-        }
-
-        if (!authHeader.startsWith("Bearer ")) {
-            log.error("Invalid Authorization format: {}", authHeader);
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid Authorization header format"
-            );
-        }
-
-        // Extract token
-        String token = authHeader.substring(7).trim();
-        log.info("Token extracted (length: {})", token.length());
-
-        String email;
-        try {
-            email = tokenService.getEmailFromAccessToken(token);
-            log.info("Email extracted from token: {}", email);
-        } catch (io.jsonwebtoken.ExpiredJwtException e) {
-            log.error("Token expired");
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Token expired"
-            );
-        } catch (Exception e) {
-            log.error("Invalid token: {}", e.getMessage());
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid token"
-            );
-        }
-
-        if (email == null || email.isBlank()) {
-            log.error("No email found in token");
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "Invalid token"
-            );
-        }
-
-        // Find user
-        User user = findByEmail(email);
-
-        if (user == null) {
-            log.error("User not found for email: {}", email);
-            throw new ResponseStatusException(
-                    HttpStatus.UNAUTHORIZED,
-                    "User not found"
-            );
-        }
-
-        log.info("User authenticated: {} ({})", user.getUsername(), user.getEmail());
-        log.info("======== GET USER FROM TOKEN - END (SUCCESS) ========");
-
-        return user;
-    }
-
     private UserResponseDTO buildUserResponse(User user) {
         return UserResponseDTO.builder()
                 .firstName(user.getFirstName())
@@ -447,8 +365,10 @@ public class UserRegistrationService {
                 .mfaSecret(user.isMfaEnabled() ? user.getMfaSecret() : "MFA not enabled")
                 .mfaCode(user.isMfaEnabled() ? user.getMfaCode() : null)
                 .generatedAt(user.getGeneratedAt())
+                .profileImage(user.getProfileImage()) // attach image here
                 .build();
     }
+
 
     // now for login without mfa enabled
     public TokenDto loginNoMfa(LoginRequest loginRequest){

@@ -13,6 +13,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -190,6 +191,45 @@ public class ProjectService {
                 .map(project -> buildProjectResponse(project, includeDocuments))
                 .collect(Collectors.toList());
     }
+
+    // get all documents
+    public List<ProjectResponseDTO> getAllDocumentsForUser(UUID userId) {
+        log.info("Fetching all projects for user ID: {}", userId);
+        User owner = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<Project> projects = projectRepo.findByUser(owner);
+        if (projects.isEmpty()) {
+            log.info("No projects found for user {}", userId);
+            return Collections.emptyList();
+        }
+
+        boolean includeDocuments = true;
+
+        return projects.stream()
+                .map(project -> buildProjectResponse(project, includeDocuments))
+                .collect(Collectors.toList());
+
+    }
+
+
+    // view most recent projects
+    public List<ProjectResponseDTO> getOrderedProjects(UUID userId) {
+        log.info("Fetching all projects for user ID: {}", userId);
+        User owner = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        List<Project> projects = projectRepo.findByUserOrderByCreatedAtDesc(owner);
+        if (projects.isEmpty()) {
+            log.info("No projects found for user {}", userId);
+            return Collections.emptyList();
+        }
+        boolean includeDocuments = true;
+        return projects.stream()
+                .map(project -> buildProjectResponse(project, includeDocuments))
+                .collect(Collectors.toList());
+    }
+
 
     // ========================
     // DELETE PROJECT
@@ -471,7 +511,7 @@ public class ProjectService {
     // ========================
     private String getFileExtension(String filename) {
         if (filename != null && filename.contains(".")) {
-            return filename.substring(filename.lastIndexOf("."));
+            return filename.substring   (filename.lastIndexOf("."));
         }
         return "";
     }

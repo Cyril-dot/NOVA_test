@@ -5,6 +5,7 @@ import com.novaTech.Nova.DTO.ChatRequest;
 import com.novaTech.Nova.DTO.ChatResponse;
 import com.novaTech.Nova.Entities.Enums.Model;
 import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.ChatService;
 import com.novaTech.Nova.Services.UserRegistrationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
@@ -30,6 +33,30 @@ public class ChatController {
     private final ChatService chatService;
     private final UserRegistrationService userService;
 
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
+        }
+
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
+    }
+
+
+
     @PostConstruct
     public void printTestUrls() {
         log.info("=".repeat(80));
@@ -42,20 +69,17 @@ public class ChatController {
         log.info("=".repeat(80) + "\n");
     }
 
-    private User extractUser(String authHeader) {
-        return userService.getUserFromToken(authHeader);
-    }
-
     /**
      * Send a message (non-streaming) - BLOCKING VERSION
      */
     @PostMapping("/message")
     @Operation(summary = "Send a chat message and get AI response")
     public ResponseEntity<ChatResponse> sendMessage(
-            @RequestBody ChatRequest request,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @RequestBody ChatRequest request){
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+        User user = userService.findByEmail(username);
 
         log.info("💬 [CHAT] User: {} | Message: '{}'",
                 user.getEmail(),
@@ -75,10 +99,12 @@ public class ChatController {
     @PostMapping(value = "/message/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "Send a chat message and get streaming AI response")
     public Flux<String> sendMessageStream(
-            @RequestBody ChatRequest request,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @RequestBody ChatRequest request) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String  username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
 
         log.info("🌊 [CHAT-STREAM] User: {} | Model: {}", user.getEmail(), request.getModel());
 
@@ -89,10 +115,11 @@ public class ChatController {
 
     @GetMapping("/list")
     @Operation(summary = "Get all chats for the current user")
-    public ResponseEntity<List<ChatHistoryResponse>> getUserChats(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<List<ChatHistoryResponse>> getUserChats() {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+        User user = userService.findByEmail(username);
         List<ChatHistoryResponse> chats = chatService.getUserChats(user);
 
         log.info("📋 [CHAT] Found {} chats for {}", chats.size(), user.getEmail());
@@ -102,10 +129,11 @@ public class ChatController {
     @GetMapping("/{chatId}")
     @Operation(summary = "Get full chat history by chat ID")
     public ResponseEntity<ChatHistoryResponse> getChatHistory(
-            @PathVariable Long chatId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @PathVariable Long chatId) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+        User user =  userService.findByEmail(username);
         ChatHistoryResponse history = chatService.getChatHistory(chatId, user);
 
         return ResponseEntity.ok(history);
@@ -114,10 +142,11 @@ public class ChatController {
     @PostMapping("/new")
     @Operation(summary = "Create a new chat")
     public ResponseEntity<ChatHistoryResponse> createNewChat(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
             @RequestParam Model model) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+        User user = userService.findByEmail(username);
         var chat = chatService.createNewChat(user, model);
 
         ChatHistoryResponse response = ChatHistoryResponse.builder()
@@ -134,10 +163,11 @@ public class ChatController {
     @DeleteMapping("/{chatId}")
     @Operation(summary = "Delete a chat")
     public ResponseEntity<Void> deleteChat(
-            @PathVariable Long chatId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @PathVariable Long chatId) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username =  principal.getUsername();
+        User user = userService.findByEmail(username);
         chatService.deleteChat(chatId, user);
 
         return ResponseEntity.noContent().build();
@@ -146,10 +176,10 @@ public class ChatController {
     @PostMapping("/{chatId}/clear")
     @Operation(summary = "Clear all messages from a chat")
     public ResponseEntity<Void> clearChat(
-            @PathVariable Long chatId,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
-
-        User user = extractUser(authHeader);
+            @PathVariable Long chatId) {
+        UserPrincipal principal = userPrincipal();
+        String username =  principal.getUsername();
+        User user = userService.findByEmail(username);
         chatService.clearChat(chatId, user);
 
         return ResponseEntity.noContent().build();

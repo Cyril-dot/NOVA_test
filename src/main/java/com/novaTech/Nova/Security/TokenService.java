@@ -46,6 +46,7 @@ public class TokenService {
 
         return Jwts.builder()
                 .setSubject(user.getEmail())
+                .claim("userId", user.getId())
                 .claim("role", user.getRole().name())
                 .setIssuedAt(now)
                 .setExpiration(expiry)
@@ -80,6 +81,7 @@ public class TokenService {
         }
     }
 
+    // ===================== EXTRACT CLAIMS =====================
     public String getEmailFromAccessToken(String token) {
         try {
             return Jwts.parserBuilder()
@@ -87,7 +89,39 @@ public class TokenService {
                     .build()
                     .parseClaimsJws(token)
                     .getBody()
-                    .getSubject();
+                    .getSubject();  // Email is the subject
+        } catch (ExpiredJwtException ex) {
+            throw new RuntimeException("Token expired", ex);
+        } catch (JwtException ex) {
+            throw new RuntimeException("Invalid token", ex);
+        }
+    }
+
+    public Long getUserIdFromAccessToken(String token) {
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+
+            return claims.get("userId", Long.class);
+        } catch (ExpiredJwtException ex) {
+            throw new RuntimeException("Token expired", ex);
+        } catch (JwtException ex) {
+            throw new RuntimeException("Invalid token", ex);
+        }
+    }
+
+    public String getRoleFromAccessToken(String token) {
+        try {
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(getSigningKey())
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+
+            return claims.get("role", String.class);
         } catch (ExpiredJwtException ex) {
             throw new RuntimeException("Token expired", ex);
         } catch (JwtException ex) {

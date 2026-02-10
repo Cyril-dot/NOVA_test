@@ -390,4 +390,59 @@ public class ChatService {
         chatRepository.save(chat);
         log.info("Cleared all messages from chat {}", chatId);
     }
+
+    /**
+     * Get all chat history for a user with message details
+     */
+    public List<ChatHistoryResponse> getUserChatHistory(User user) {
+        log.info("Fetching chat history for user: {}", user.getId());
+
+        List<Chat> chats = chatRepository.findByUserAndIsActiveTrueOrderByUpdatedAtDesc(user);
+
+        if (chats.isEmpty()) {
+            log.info("No chat history found for user: {}", user.getId());
+            return List.of();
+        }
+
+        return chats.stream()
+                .map(chat -> {
+                    List<MessageResponse> messages = chat.getMessages().stream()
+                            .map(MessageResponse::fromEntity)
+                            .collect(Collectors.toList());
+
+                    return ChatHistoryResponse.builder()
+                            .chatId(chat.getId())
+                            .title(chat.getTitle())
+                            .createdAt(chat.getCreatedAt())
+                            .updatedAt(chat.getUpdatedAt())
+                            .messageCount(messages.size())
+                            .messages(messages)
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Delete all chat history for a user (soft delete all chats)
+     */
+    @Transactional
+    public void clearAllUserChatHistory(User user) {
+        log.info("Clearing all chat history for user: {}", user.getId());
+
+        List<Chat> userChats = chatRepository.findByUserAndIsActiveTrueOrderByUpdatedAtDesc(user);
+
+        if (userChats.isEmpty()) {
+            log.info("No active chats found for user: {}", user.getId());
+            return;
+        }
+
+        // Soft delete all user's chats
+        userChats.forEach(chat -> {
+            chat.setActive(false);
+            log.debug("Deactivating chat: {}", chat.getId());
+        });
+
+        chatRepository.saveAll(userChats);
+        log.info("Successfully cleared {} chats for user: {}", userChats.size(), user.getId());
+    }
 }

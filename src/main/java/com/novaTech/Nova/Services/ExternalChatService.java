@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -333,6 +334,58 @@ public class ExternalChatService {
                 .messageCount(messages.size())
                 .messages(messages)
                 .build();
+    }
+
+    // general chat search
+    public List<ChatHistoryResponse> generalSearchOfChats(String keyword, User user) {
+        List<Chat> chats = chatRepository.searchChats(user, keyword);
+
+        if (chats.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return chats.stream()
+                .map(chat -> {
+                    List<MessageResponse> messages = chat.getMessages().stream()
+                            .map(MessageResponse::fromEntity)
+                            .collect(Collectors.toList());
+
+                    return ChatHistoryResponse.builder()
+                            .chatId(chat.getId())
+                            .title(chat.getTitle())
+                            .createdAt(chat.getCreatedAt())
+                            .updatedAt(chat.getUpdatedAt())
+                            .messageCount(messages.size())
+                            .messages(messages)
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    // now to searh chats by title
+    public List<ChatHistoryResponse> searchChatsByTitle(String title, User user) {
+        List<Chat> chats = chatRepository.findByUserAndIsActiveTrueAndTitleContainingIgnoreCaseOrderByUpdatedAtDesc(user, title);
+
+        if (chats.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        return chats.stream()
+                .map(chat -> {
+                    List<MessageResponse> messages = chat.getMessages().stream()
+                            .map(MessageResponse::fromEntity)
+                            .collect(Collectors.toList());
+
+                    return ChatHistoryResponse.builder()
+                            .chatId(chat.getId())
+                            .title(chat.getTitle())
+                            .createdAt(chat.getCreatedAt())
+                            .updatedAt(chat.getUpdatedAt())
+                            .messageCount(messages.size())
+                            .messages(messages)
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 
     @Transactional

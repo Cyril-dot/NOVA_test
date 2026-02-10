@@ -27,6 +27,28 @@ public interface ChatRepository extends JpaRepository<Chat, Long> {
 
     // Custom query to get chat with messages
     @Query("SELECT c FROM Chat c LEFT JOIN FETCH c.messages WHERE c.id = :chatId AND c.user = :user AND c.isActive = true")
-    Optional<Chat> findByIdAndUserWithMessages(@Param("chatId") Long chatId,
-                                               @Param("user") User user);
+    Optional<Chat> findByIdAndUserWithMessages(@Param("chatId") Long chatId, @Param("user") User user);
+
+
+    // Search chats by title
+    List<Chat> findByUserAndIsActiveTrueAndTitleContainingIgnoreCaseOrderByUpdatedAtDesc(
+            User user,
+            String title
+    );
+
+    // General search across title and message content
+    @Query("""
+        SELECT DISTINCT c
+        FROM Chat c
+        LEFT JOIN c.messages m
+        WHERE c.user = :user
+          AND c.isActive = true
+          AND (
+                LOWER(c.title) LIKE LOWER(CONCAT('%', :keyword, '%'))
+                OR LOWER(m.content) LIKE LOWER(CONCAT('%', :keyword, '%'))
+          )
+        ORDER BY c.updatedAt DESC
+    """)
+    List<Chat> searchChats(User user, String keyword);
+
 }

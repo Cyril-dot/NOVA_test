@@ -1,12 +1,11 @@
 package com.novaTech.Nova.Entities;
 
+import com.novaTech.Nova.Entities.Enums.TeamStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
-import lombok.ToString;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
@@ -14,10 +13,16 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Table(name = "teams")
-@Getter
-@Setter
-@ToString(exclude = {"members", "user"}) // ✅ CRITICAL: Exclude relationships
+@Table(
+        name = "teams",
+        indexes = {
+                @Index(name = "idx_team_id", columnList = "id"),
+                @Index(name = "idx_team_name", columnList = "name"),
+                @Index(name = "idx_team_description", columnList = "description"),
+                @Index(name = "idx_team_created_at", columnList = "created_at")  // ✅ Fixed: use database column name
+        }
+)
+@Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
@@ -39,6 +44,7 @@ public class Team {
     @Builder.Default
     private Set<TeamMember> members = new HashSet<>();
 
+    @Column(name = "created_at")  // ✅ Added explicit column mapping
     private LocalDateTime createdAt;
 
     // ✅ Custom equals/hashCode based on ID only

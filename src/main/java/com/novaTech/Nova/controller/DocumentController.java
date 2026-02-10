@@ -7,6 +7,7 @@ import com.novaTech.Nova.DTO.ProcessingHistoryResponse;
 import com.novaTech.Nova.Entities.Document;
 import com.novaTech.Nova.Entities.Enums.FunctionalityType;
 import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.DocumentProcessingService;
 import com.novaTech.Nova.Services.DocumentService;
 import com.novaTech.Nova.Services.UserRegistrationService;
@@ -17,6 +18,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,22 +38,43 @@ public class DocumentController {
     private final DocumentProcessingService processingService;
     private final UserRegistrationService userService;
 
-    /**
-     * Extract user from JWT token in Authorization header
-     */
-    private User extractUser(String authHeader) {
-        return userService.getUserFromToken(authHeader);
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
+        }
+
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
     }
 
     /**
      * Upload document only (without AI processing)
      */
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<DocumentUploadResponse> uploadDocument(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @RequestPart("file") MultipartFile file) {
+    public ResponseEntity<DocumentUploadResponse> uploadDocument(@RequestPart("file") MultipartFile file) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getEmail();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
+
         log.info("POST /api/v1/documents/upload - Uploading file: {} for user: {}",
                 file.getOriginalFilename(), user.getUsername());
 
@@ -76,13 +100,20 @@ public class DocumentController {
      */
     @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentProcessResponse> processDocument(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
             @RequestPart("file") MultipartFile file,
             @RequestParam("functionality") FunctionalityType functionality,
             @RequestParam(value = "question", required = false) String question,
             @RequestParam(value = "customPrompt", required = false) String customPrompt) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
+
         log.info("POST /api/v1/documents/process - Processing file: {} with functionality: {} for user: {}",
                 file.getOriginalFilename(), functionality, user.getUsername());
 
@@ -115,11 +146,18 @@ public class DocumentController {
      */
     @PostMapping("/{documentId}/process")
     public ResponseEntity<DocumentProcessResponse> processExistingDocument(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
             @PathVariable Long documentId,
             @Valid @RequestBody DocumentProcessRequest request) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
+
         log.info("POST /api/v1/documents/{}/process - Functionality: {} for user: {}",
                 documentId, request.getFunctionality(), user.getUsername());
 
@@ -146,10 +184,17 @@ public class DocumentController {
      * Get all documents for current user
      */
     @GetMapping
-    public ResponseEntity<List<Document>> getUserDocuments(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<List<Document>> getUserDocuments() {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
+
         log.info("GET /api/v1/documents - Getting all documents for user: {}", user.getUsername());
 
         try {
@@ -165,11 +210,17 @@ public class DocumentController {
      * Get document by ID (user-specific)
      */
     @GetMapping("/{id}")
-    public ResponseEntity<?> getDocumentById(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @PathVariable Long id) {
+    public ResponseEntity<?> getDocumentById(@PathVariable Long id) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
+
         log.info("GET /api/v1/documents/{} for user: {}", id, user.getUsername());
 
         try {
@@ -186,11 +237,16 @@ public class DocumentController {
      * Delete document (user-specific)
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteDocument(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @PathVariable Long id) {
+    public ResponseEntity<?> deleteDocument(@PathVariable Long id) {
 
-        User user = extractUser(authHeader); // ✅ Single fetch
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
         log.info("DELETE /api/v1/documents/{} for user: {}", id, user.getUsername());
 
         try {
@@ -207,11 +263,15 @@ public class DocumentController {
      * Get processing history for a document (user-specific)
      */
     @GetMapping("/{id}/history")
-    public ResponseEntity<?> getDocumentHistory(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader,
-            @PathVariable Long id) {
+    public ResponseEntity<?> getDocumentHistory(@PathVariable Long id) {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
         log.info("GET /api/v1/documents/{}/history for user: {}", id, user.getUsername());
 
         try {
@@ -228,10 +288,17 @@ public class DocumentController {
      * Get user's document count
      */
     @GetMapping("/count")
-    public ResponseEntity<?> getUserDocumentCount(
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getUserDocumentCount() {
 
-        User user = extractUser(authHeader);
+        UserPrincipal principal = userPrincipal();
+        String username = principal.getUsername();
+
+        User user = userService.findByEmail(username);
+        if (user == null){
+            log.error("User not found: {}", username);
+            throw new RuntimeException("User not found");
+        }
+
         log.info("GET /api/v1/documents/count for user: {}", user.getUsername());
 
         try {

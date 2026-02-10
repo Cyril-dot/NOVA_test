@@ -6,6 +6,7 @@ import com.novaTech.Nova.DTO.TaskResponseForProjectDto;
 import com.novaTech.Nova.DTO.TaskUpdateDTO;
 import com.novaTech.Nova.Entities.Enums.TaskStatus;
 import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.TaskService;
 import com.novaTech.Nova.Services.UserRegistrationService;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,21 +28,37 @@ import java.util.UUID;
 @RequestMapping("/api/tasks")
 public class TaskController {
 
-    private final UserRegistrationService userRegistrationService;
     private final TaskService taskService;
+
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
+        }
+
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
+    }
 
 
     @PostMapping("/create/user")
-    public ResponseEntity<?> addUserTask(@RequestBody TaskCreationDTO dto, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> addUserTask(@RequestBody TaskCreationDTO dto) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            TaskResponseDTO response = taskService.createUserTask(user.getId(), dto);
+            UserPrincipal userPrincipal = userPrincipal();
+            UUID userId = userPrincipal.getUserId();
+            TaskResponseDTO response = taskService.createUserTask(userId, dto);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "message", "Task created successfully",
@@ -57,17 +76,12 @@ public class TaskController {
     @PostMapping("/create/project/{projectId}")
     public ResponseEntity<?> addProjectTask(
             @PathVariable UUID projectId,
-            @RequestBody TaskCreationDTO dto,
-            @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+            @RequestBody TaskCreationDTO dto) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
 
-            TaskResponseForProjectDto response = taskService.createProjectTask(projectId, user.getId(), dto);
+            TaskResponseForProjectDto response = taskService.createProjectTask(projectId, userId, dto);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "message", "Task created successfully for project",
@@ -82,16 +96,12 @@ public class TaskController {
     }
 
     @GetMapping("/user/all")
-    public ResponseEntity<?> viewAllUserTasks(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewAllUserTasks() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
 
-            List<TaskResponseDTO> tasks = taskService.viewAllUserTasks(user.getId());
+            List<TaskResponseDTO> tasks = taskService.viewAllUserTasks(userId);
             return ResponseEntity.ok(tasks);
 
         } catch (RuntimeException e) {
@@ -103,16 +113,11 @@ public class TaskController {
     }
 
     @GetMapping("/user/{taskId}")
-    public ResponseEntity<?> viewUserTaskById(@PathVariable UUID taskId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewUserTaskById(@PathVariable UUID taskId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            TaskResponseDTO task = taskService.viewTaskByIdForUser(taskId, user.getId());
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
+            TaskResponseDTO task = taskService.viewTaskByIdForUser(taskId,userId);
             if (task == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                         "error", "Task not found"
@@ -129,16 +134,12 @@ public class TaskController {
     }
 
     @GetMapping("/user/status/{status}")
-    public ResponseEntity<?> viewUserTasksByStatus(@PathVariable TaskStatus status, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewUserTasksByStatus(@PathVariable TaskStatus status) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
 
-            List<TaskResponseDTO> tasks = taskService.viewTasksByStatus(user.getId(), status);
+            List<TaskResponseDTO> tasks = taskService.viewTasksByStatus(userId, status);
             return ResponseEntity.ok(tasks);
 
         } catch (RuntimeException e) {
@@ -150,16 +151,12 @@ public class TaskController {
     }
 
     @GetMapping("/project/{projectId}/all")
-    public ResponseEntity<?> viewAllProjectTasks(@PathVariable UUID projectId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewAllProjectTasks(@PathVariable UUID projectId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
 
-            List<TaskResponseForProjectDto> tasks = taskService.viewAllProjectTasks(projectId, user.getId());
+            List<TaskResponseForProjectDto> tasks = taskService.viewAllProjectTasks(projectId, userId);
             return ResponseEntity.ok(tasks);
 
         } catch (RuntimeException e) {
@@ -171,16 +168,11 @@ public class TaskController {
     }
 
     @GetMapping("/project/{projectId}/{taskId}")
-    public ResponseEntity<?> viewProjectTaskById(@PathVariable UUID projectId, @PathVariable UUID taskId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewProjectTaskById(@PathVariable UUID projectId, @PathVariable UUID taskId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            TaskResponseForProjectDto task = taskService.viewTaskByIdForProject(taskId, projectId, user.getId());
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
+            TaskResponseForProjectDto task = taskService.viewTaskByIdForProject(taskId, projectId,userId);
             if (task == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                         "error", "Task not found"
@@ -197,16 +189,11 @@ public class TaskController {
     }
 
     @GetMapping("/project/{projectId}/status/{status}")
-    public ResponseEntity<?> viewProjectTasksByStatus(@PathVariable UUID projectId, @PathVariable TaskStatus status, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewProjectTasksByStatus(@PathVariable UUID projectId, @PathVariable TaskStatus status) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            List<TaskResponseForProjectDto> tasks = taskService.viewTasksByStatusForProject(projectId, user.getId(), status);
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
+            List<TaskResponseForProjectDto> tasks = taskService.viewTasksByStatusForProject(projectId, userId, status);
             return ResponseEntity.ok(tasks);
 
         } catch (RuntimeException e) {
@@ -218,16 +205,12 @@ public class TaskController {
     }
 
     @GetMapping("/user/search")
-    public ResponseEntity<?> searchUserTasks(@RequestParam String keyword, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> searchUserTasks(@RequestParam String keyword) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
 
-            List<TaskResponseDTO> tasks = taskService.searchUserTasks(user.getId(), keyword);
+            List<TaskResponseDTO> tasks = taskService.searchUserTasks(userId, keyword);
             return ResponseEntity.ok(tasks);
 
         } catch (RuntimeException e) {
@@ -239,16 +222,11 @@ public class TaskController {
     }
 
     @GetMapping("/project/{projectId}/search")
-    public ResponseEntity<?> searchProjectTasks(@PathVariable UUID projectId, @RequestParam String keyword, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> searchProjectTasks(@PathVariable UUID projectId, @RequestParam String keyword) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            List<TaskResponseForProjectDto> tasks = taskService.searchProjectTasks(projectId, keyword, user.getId());
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
+            List<TaskResponseForProjectDto> tasks = taskService.searchProjectTasks(projectId, keyword, userId);
             return ResponseEntity.ok(tasks);
 
         } catch (RuntimeException e) {
@@ -260,16 +238,12 @@ public class TaskController {
     }
 
     @PutMapping("/user/{taskId}")
-    public ResponseEntity<?> updateUserTask(@PathVariable UUID taskId, @RequestBody TaskUpdateDTO dto, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> updateUserTask(@PathVariable UUID taskId, @RequestBody TaskUpdateDTO dto) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
 
-            TaskResponseDTO response = taskService.updateUserTask(taskId, user.getId(), dto);
+            TaskResponseDTO response = taskService.updateUserTask(taskId, userId, dto);
             return ResponseEntity.ok(Map.of(
                     "message", "Task updated successfully",
                     "task", response
@@ -284,16 +258,12 @@ public class TaskController {
     }
 
     @DeleteMapping("/user/{taskId}")
-    public ResponseEntity<?> deleteUserTask(@PathVariable UUID taskId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> deleteUserTask(@PathVariable UUID taskId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
 
-            taskService.deleteUserTask(taskId, user.getId());
+            taskService.deleteUserTask(taskId, userId);
             return ResponseEntity.ok(Map.of(
                     "message", "Task deleted successfully"
             ));
@@ -307,16 +277,11 @@ public class TaskController {
     }
 
     @PutMapping("/project/{projectId}/{taskId}")
-    public ResponseEntity<?> updateProjectTask(@PathVariable UUID projectId, @PathVariable UUID taskId, @RequestBody TaskUpdateDTO dto, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> updateProjectTask(@PathVariable UUID projectId, @PathVariable UUID taskId, @RequestBody TaskUpdateDTO dto) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            TaskResponseForProjectDto response = taskService.updateProjectTask(taskId, projectId, user.getId(), dto);
+            UserPrincipal principal =  userPrincipal();
+            UUID userId = principal.getUserId();
+            TaskResponseForProjectDto response = taskService.updateProjectTask(taskId, projectId, userId, dto);
             return ResponseEntity.ok(Map.of(
                     "message", "Task updated successfully",
                     "task", response
@@ -333,14 +298,9 @@ public class TaskController {
     @DeleteMapping("/project/{projectId}/{taskId}")
     public ResponseEntity<?> deleteProjectTask(@PathVariable UUID projectId, @PathVariable UUID taskId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            taskService.deleteProjectTask(taskId, projectId, user.getId());
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
+            taskService.deleteProjectTask(taskId, projectId, userId);
             return ResponseEntity.ok(Map.of(
                     "message", "Task deleted successfully"
             ));

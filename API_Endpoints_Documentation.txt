@@ -1,448 +1,1842 @@
-Nova API Endpoints Documentation
+# Nova API Endpoints Documentation
 
-This document outlines the available API endpoints, their purpose, and how to test them using Postman.
+This document outlines all available API endpoints, their purpose, and how to test them using Postman. It also includes sample successful response bodies for frontend developers.
 
-Base URL: http://localhost:8080
+**Base URL**: `http://localhost:8080`
+**Authentication**: Most endpoints require a `Bearer Token` in the `Authorization` header. Replace `<your_token>` with an actual JWT access token obtained from login.
 
-================================================================================
-1. AUTHENTICATION (UserRegistrationController)
-================================================================================
+---
 
-1.1 Register User
------------------
-Endpoint: POST /api/auth/register
-Description: Registers a new user. Supports multipart/form-data for profile image upload.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/auth/register
-- Body: form-data
-  - firstName: John
-  - lastName: Doe
-  - username: johndoe
-  - email: john.doe@example.com
-  - password: password123
-  - confirmPassword: password123
-  - mfaEnabled: false (or true)
-  - profileImage: [Select a file] (Type: File)
+## 1. Authentication & User Management (`/api/auth`)
 
-1.2 Login (No MFA)
-------------------
-Endpoint: POST /api/auth/login
-Description: Authenticates a user and returns JWT tokens.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/auth/login
-- Body: raw (JSON)
-  { "email": "john.doe@example.com", "password": "password123" }
+### 1.1 Register User
+- **Endpoint**: `POST /api/auth/register`
+- **Description**: Registers a new user. Supports multipart/form-data for profile image upload.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/auth/register`
+  - **Body**: `form-data`
+    - `firstName`: `John`
+    - `lastName`: `Doe`
+    - `username`: `johndoe`
+    - `email`: `john.doe@example.com`
+    - `password`: `password123`
+    - `confirmPassword`: `password123`
+    - `mfaEnabled`: `false` (or `true`)
+    - `profileImage`: (file) (optional)
+- **Expected Response (201 Created)**:
+  ```json
+  {
+      "message": "User registered successfully",
+      "user": {
+          "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "firstName": "John",
+          "lastName": "Doe",
+          "username": "johndoe",
+          "email": "john.doe@example.com",
+          "role": "USER",
+          "status": "ACTIVE",
+          "createdAt": "2023-10-27T10:00:00.123456",
+          "mfaEnabled": false,
+          "mfaSecret": "MFA not enabled",
+          "mfaCode": null,
+          "generatedAt": null
+      }
+  }
+  ```
 
-1.3 Login (With MFA)
---------------------
-Endpoint: POST /api/auth/login-mfa
-Description: Initiates login for users with MFA enabled.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/auth/login-mfa
-- Body: raw (JSON)
-  { "email": "john.doe@example.com", "password": "password123" }
+### 1.2 Login
+- **Endpoint**: `POST /api/auth/login`
+- **Description**: Authenticates a user without MFA and returns JWT tokens.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/auth/login`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "email": "john.doe@example.com",
+        "password": "password123"
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc4OTA5MjAwfQ.signature_part_2",
+      "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc5NzA1NjAwfQ.signature_part_2",
+      "message": "Login successful"
+  }
+  ```
 
-1.4 Verify MFA Code
--------------------
-Endpoint: POST /api/auth/verify-mfa
-Description: Verifies the MFA code to complete login.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/auth/verify-mfa
-- Params: email=john.doe@example.com, mfaCode=123456
+### 1.3 Login (With MFA)
+- **Endpoint**: `POST /api/auth/login-mfa`
+- **Description**: Initiates login for users with MFA enabled. Returns a message to verify MFA.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/auth/login-mfa`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "email": "john.doe@example.com",
+        "password": "password123"
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "accessToken": null,
+      "refreshToken": null,
+      "message": "MFA is enabled for user, verify your mfa to login successfully"
+  }
+  ```
 
-1.5 Update User Profile
------------------------
-Endpoint: PATCH /api/auth/update/user
-Description: Updates user profile details.
-Postman Setup:
-- Method: PATCH
-- URL: {{base_url}}/api/auth/update/user
-- Headers: Authorization: Bearer <token>
-- Body: form-data (firstName, lastName, etc.)
+### 1.4 Verify MFA Code
+- **Endpoint**: `POST /api/auth/verify-mfa`
+- **Description**: Verifies the MFA code to complete login.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/auth/verify-mfa?email=john.doe@example.com&mfaCode=123456`
+  - **Params**:
+    - `email`: `john.doe@example.com`
+    - `mfaCode`: `123456`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc4OTA5MjAwfQ.signature_part_2",
+      "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc5NzA1NjAwfQ.signature_part_2",
+      "message": "Login successful"
+  }
+  ```
 
-1.6 Change Password
--------------------
-Endpoint: PATCH /api/auth/change-password
-Description: Changes the user's password.
-Postman Setup:
-- Method: PATCH
-- URL: {{base_url}}/api/auth/change-password
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON)
-  { "currentPassword": "...", "newPassword": "...", "confirmPassword": "..." }
+### 1.5 Update Authenticated User's Profile
+- **Endpoint**: `PUT /api/auth/me`
+- **Description**: Updates the profile of the currently logged-in user.
+- **Postman**:
+  - **Method**: `PUT`
+  - **URL**: `{{base_url}}/api/auth/me`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data` (include only fields to be updated)
+    - `firstName`: `Johnny`
+    - `username`: `johnny_d`
+    - `profileImage`: (file) (optional)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "message": "Profile updated successfully",
+      "user": {
+          "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "firstName": "Johnny",
+          "lastName": "Doe",
+          "username": "johnny_d",
+          "email": "john.doe@example.com",
+          "role": "USER",
+          "status": "ACTIVE",
+          "createdAt": "2023-10-27T10:00:00.123456",
+          "mfaEnabled": false,
+          "mfaSecret": "MFA not enabled",
+          "mfaCode": null,
+          "generatedAt": null
+      }
+  }
+  ```
 
-1.7 MFA Management
-------------------
-- Enable MFA: POST /api/auth/enable-mfa
-- Disable MFA: POST /api/auth/disable-mfa
-- Generate New Keys: POST /api/auth/generate-mfa (Params: email)
-- View MFA Details: GET /api/auth/view-mfa (Params: email)
-- View MFA Code (Dev): GET /api/auth/mfa-code (Params: email)
+### 1.6 Change Password
+- **Endpoint**: `PATCH /api/auth/change-password`
+- **Description**: Changes the user's password.
+- **Postman**:
+  - **Method**: `PATCH`
+  - **URL**: `{{base_url}}/api/auth/change-password`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "currentPassword": "password123",
+        "newPassword": "new_secure_password",
+        "confirmPassword": "new_secure_password"
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  "Password updated successfully"
+  ```
 
-1.8 OAuth2 Login
-----------------
-- Google: GET /oauth2/login/google
-- GitHub: GET /oauth2/login/github
+### 1.7 MFA Management
+- **Enable MFA**: `POST /api/auth/enable-mfa`
+  - **Description**: Enables MFA for the authenticated user and returns the secret/QR code URL.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/auth/enable-mfa`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "secret": "JBSWY3DPEHPK3PXP",
+        "qrCodeUrl": "otpauth://totp/Nova:john.doe@example.com?secret=JBSWY3DPEHPK3PXP&issuer=Nova"
+    }
+    ```
+- **Disable MFA**: `POST /api/auth/disable-mfa`
+  - **Description**: Disables MFA for the authenticated user.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/auth/disable-mfa`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    "MFA disabled successfully"
+    ```
+- **Generate New Keys**: `POST /api/auth/generate-mfa`
+  - **Description**: Generates new MFA keys (secret and code) for a user.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/auth/generate-mfa?email=john.doe@example.com`
+    - **Params**: `email=john.doe@example.com`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "secret": "NEW_SECRET_XYZ",
+        "mfaCode": 654321
+    }
+    ```
+- **View MFA Details**: `GET /api/auth/view-mfa`
+  - **Description**: Views existing MFA details for a user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/auth/view-mfa?email=john.doe@example.com`
+    - **Params**: `email=john.doe@example.com`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "secret": "JBSWY3DPEHPK3PXP",
+        "mfaCode": 123456
+    }
+    ```
+- **View MFA Code (Dev)**: `GET /api/auth/mfa-code`
+  - **Description**: Retrieves the current MFA code for a user (useful for testing without an authenticator app).
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/auth/mfa-code?email=john.doe@example.com`
+    - **Params**: `email=john.doe@example.com`
+  - **Expected Response (200 OK)**:
+    ```json
+    123456
+    ```
 
-================================================================================
-2. DASHBOARD & TEAMS (DashboardController)
-================================================================================
+### 1.8 OAuth2 Login
+- **Google**: `GET /oauth2/login/google`
+  - **Description**: Initiates Google OAuth2 login flow.
+  - **Postman**: Best tested in a browser.
+  - **URL**: `http://localhost:8080/oauth2/login/google`
+  - **Expected Response**: Redirect to Google login page.
+- **GitHub**: `GET /oauth2/login/github`
+  - **Description**: Initiates GitHub OAuth2 login flow.
+  - **Postman**: Best tested in a browser.
+  - **URL**: `http://localhost:8080/oauth2/login/github`
+  - **Expected Response**: Redirect to GitHub login page.
 
-2.1 Dashboard Statistics
-------------------------
-Endpoint: GET /api/dashboard/stats
-Description: Returns aggregated statistics for projects and tasks.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/dashboard/stats
-- Headers: Authorization: Bearer <token>
+### 1.9 User Details
+- **Get Authenticated User**: `GET /api/auth/me`
+  - **Description**: Get details of the currently authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/auth/me`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "firstName": "John",
+        "lastName": "Doe",
+        "username": "johndoe",
+        "email": "john.doe@example.com",
+        "role": "USER",
+        "status": "ACTIVE",
+        "createdAt": "2023-10-27T10:00:00.123456",
+        "mfaEnabled": false,
+        "mfaSecret": "MFA not enabled",
+        "mfaCode": null,
+        "generatedAt": null
+    }
+    ```
+- **Get User by ID**: `GET /api/auth/users/{userId}`
+  - **Description**: Get public details of any user by their ID.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/auth/users/a1b2c3d4-e5f6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "firstName": "John",
+        "lastName": "Doe",
+        "username": "johndoe",
+        "email": "john.doe@example.com",
+        "role": "USER",
+        "status": "ACTIVE",
+        "createdAt": "2023-10-27T10:00:00.123456",
+        "mfaEnabled": false,
+        "mfaSecret": "MFA not enabled",
+        "mfaCode": null,
+        "generatedAt": null
+    }
+    ```
+- **Get Profile Image**: `GET /api/auth/me/profile-image`
+  - **Description**: Get the profile image of the authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/auth/me/profile-image`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    - Binary image data (e.g., JPEG, PNG)
+    - Headers: `Content-Type: image/jpeg`, `Content-Length: 12345`
+- **Delete Profile Image**: `DELETE /api/auth/me/profile-image`
+  - **Description**: Deletes the profile image of the authenticated user.
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/auth/me/profile-image`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Profile image deleted successfully",
+        "user": {
+            "id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "firstName": "John",
+            "lastName": "Doe",
+            "username": "johndoe",
+            "email": "john.doe@example.com",
+            "role": "USER",
+            "status": "ACTIVE",
+            "createdAt": "2023-10-27T10:00:00.123456",
+            "mfaEnabled": false,
+            "mfaSecret": "MFA not enabled",
+            "mfaCode": null,
+            "generatedAt": null
+        }
+    }
+    ```
 
-2.2 Project Summaries
----------------------
-Endpoint: GET /api/dashboard/projects
-Description: Returns a summary list of all projects.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/dashboard/projects
-- Headers: Authorization: Bearer <token>
+---
 
-2.3 Overdue Projects
---------------------
-Endpoint: GET /api/dashboard/projects/overdue
-Description: Returns a list of overdue projects.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/dashboard/projects/overdue
-- Headers: Authorization: Bearer <token>
+## 2. Dashboard, Teams & User Search (`/api/dashboard`)
 
-2.4 Task Summaries
-------------------
-Endpoint: GET /api/dashboard/tasks
-Description: Returns a summary list of all tasks.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/dashboard/tasks
-- Headers: Authorization: Bearer <token>
+### 2.1 Dashboard Statistics
+- **Endpoint**: `GET /api/dashboard/stats`
+- **Description**: Returns aggregated statistics for projects and tasks.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/dashboard/stats`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "totalProjects": 5,
+      "completedProjects": 2,
+      "inProgressProjects": 3,
+      "totalTasks": 15,
+      "completedTasks": 5,
+      "inProgressTasks": 10
+  }
+  ```
 
-2.5 Overdue Tasks
------------------
-Endpoint: GET /api/dashboard/tasks/overdue
-Description: Returns a list of overdue tasks.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/dashboard/tasks/overdue
-- Headers: Authorization: Bearer <token>
+### 2.2 Project Summaries
+- **All Projects**: `GET /api/dashboard/projects`
+  - **Description**: Returns a summary list of all projects for the user, including due dates and days left.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/projects`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "p1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1",
+            "name": "Project Alpha",
+            "description": "Develop new feature X",
+            "dueDate": "2024-12-31",
+            "daysLeft": 60
+        },
+        {
+            "id": "p2a2b2c2-d2e2-f2g2-h2i2-j2k2l2m2n2o2",
+            "name": "Project Beta",
+            "description": "Refactor old module",
+            "dueDate": "2024-11-15",
+            "daysLeft": 15
+        }
+    ]
+    ```
+- **Overdue Projects**: `GET /api/dashboard/projects/overdue`
+  - **Description**: Returns a list of projects that are past their due date.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/projects/overdue`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "p3a3b3c3-d3e3-f3g3-h3i3-j3k3l3m3n3o3",
+            "name": "Project Gamma",
+            "description": "Fix critical bug",
+            "dueDate": "2024-01-01",
+            "daysLeft": -300
+        }
+    ]
+    ```
 
-2.6 Search Users
-----------------
-Endpoint: POST /api/dashboard/users/search
-Description: Search for users by username.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/dashboard/users/search
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON) { "username": "john" }
+### 2.3 Task Summaries
+- **All Tasks**: `GET /api/dashboard/tasks`
+  - **Description**: Returns a summary list of all tasks for the user, including due dates and days left.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/tasks`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "t1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1",
+            "title": "Implement login screen",
+            "description": "Frontend task for user authentication",
+            "dueDate": "2024-11-20",
+            "daysLeft": 20
+        },
+        {
+            "id": "t2a2b2c2-d2e2-f2g2-h2i2-j2k2l2m2n2o2",
+            "title": "Write API documentation",
+            "description": "Document all new endpoints",
+            "dueDate": "2024-11-05",
+            "daysLeft": 5
+        }
+    ]
+    ```
+- **Overdue Tasks**: `GET /api/dashboard/tasks/overdue`
+  - **Description**: Returns a list of tasks that are past their due date.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/tasks/overdue`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "t3a3b3c3-d3e3-f3g3-h3i3-j3k3l3m3n3o3",
+            "title": "Review PR #123",
+            "description": "Code review for feature X",
+            "dueDate": "2024-10-01",
+            "daysLeft": -30
+        }
+    ]
+    ```
 
-2.7 Team Management
--------------------
-- Create Team: POST /api/dashboard/teams
-  Body: { "name": "Team A", "description": "...", "memberIds": ["uuid1", "uuid2"] }
-- Add Member: POST /api/dashboard/teams/{teamId}/members
-  Body: { "memberIdentifier": "email@example.com", "searchMethod": "EMAIL" }
-- View Members: GET /api/dashboard/teams/{teamId}/members
-- View Members Details: GET /api/dashboard/teams/{teamId}/members/details
-- Remove Member: DELETE /api/dashboard/teams/{teamId}/members/{memberId}
-- Delete Team: DELETE /api/dashboard/teams/{teamId}
-- View Joined Teams: GET /api/dashboard/teams/joined
-- Count Joined Teams: GET /api/dashboard/teams/count
-- Update Member Role: PATCH /api/dashboard/teams/{teamId}/members/{memberId}/role?role=ADMIN
+### 2.4 Search Users
+- **Endpoint**: `POST /api/dashboard/users/search`
+- **Description**: Search for users by username or email.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/dashboard/users/search`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "username": "john"
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  [
+      {
+          "userName": "johndoe",
+          "userFirstName": "John",
+          "userLastName": "Doe",
+          "userEmail": "john.doe@example.com",
+          "userProfilePic": "base64string_of_image_data"
+      },
+      {
+          "userName": "johnny_d",
+          "userFirstName": "Johnny",
+          "userLastName": "Depp",
+          "userEmail": "johnny.depp@example.com",
+          "userProfilePic": null
+      }
+  ]
+  ```
 
-================================================================================
-3. PROJECTS (ProjectController)
-================================================================================
+### 2.5 Team Management
+- **Create Team**: `POST /api/dashboard/teams`
+  - **Description**: Create a new team and optionally add initial members. The creator is automatically an ADMIN.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/dashboard/teams`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Body**: `raw (JSON)`
+      ```json
+      {
+          "name": "Team Rocket",
+          "description": "Blasting off again!",
+          "memberIds": ["uuid-of-another-user-1", "uuid-of-another-user-2"]
+      }
+      ```
+  - **Expected Response (201 Created)**:
+    ```json
+    {
+        "id": "tma1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "name": "Team Rocket",
+        "description": "Blasting off again!",
+        "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "memberUsernames": ["johndoe", "janedoe", "another_user"],
+        "createdAt": "2023-10-27T10:00:00.123456"
+    }
+    ```
+- **Add Member**: `POST /api/dashboard/teams/{teamId}/members`
+  - **Description**: Add a new member to an existing team (requires ADMIN role).
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/dashboard/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/members`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Body**: `raw (JSON)`
+      ```json
+      {
+          "memberIdentifier": "new.member@example.com",
+          "searchMethod": "EMAIL"
+      }
+      ```
+      OR
+      ```json
+      {
+          "memberIdentifier": "new_member_username",
+          "searchMethod": "USERNAME"
+      }
+      ```
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "tma1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "name": "Team Rocket",
+        "description": "Blasting off again!",
+        "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "memberUsernames": ["johndoe", "janedoe", "new_member_username"],
+        "createdAt": "2023-10-27T10:00:00.123456"
+    }
+    ```
+- **View Team Members (Simple)**: `GET /api/dashboard/teams/{teamId}/members`
+  - **Description**: View basic details of a specific team and its members.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/members`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "tma1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "name": "Team Rocket",
+        "description": "Blasting off again!",
+        "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "memberUsernames": ["johndoe", "janedoe", "new_member_username"],
+        "createdAt": "2023-10-27T10:00:00.123456"
+    }
+    ```
+- **View Team Members (Detailed)**: `GET /api/dashboard/teams/{teamId}/members/details`
+  - **Description**: View detailed list of team members including their roles.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/members/details`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "username": "johndoe",
+            "firstName": "John",
+            "lastName": "Doe",
+            "email": "john.doe@example.com",
+            "role": "ADMIN"
+        },
+        {
+            "userId": "b2c3d4e5-f6a7-8901-2345-67890abcdef1",
+            "username": "janedoe",
+            "firstName": "Jane",
+            "lastName": "Doe",
+            "email": "jane.doe@example.com",
+            "role": "MEMBER"
+        }
+    ]
+    ```
+- **Remove Member**: `DELETE /api/dashboard/teams/{teamId}/members/{memberId}`
+  - **Description**: Remove a member from the team (requires ADMIN role).
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/dashboard/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/members/b2c3d4e5-f6a7-8901-2345-67890abcdef1`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "tma1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "name": "Team Rocket",
+        "description": "Blasting off again!",
+        "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "memberUsernames": ["johndoe"],
+        "createdAt": "2023-10-27T10:00:00.123456"
+    }
+    ```
+- **Delete Team**: `DELETE /api/dashboard/teams/{teamId}`
+  - **Description**: Delete a team entirely (requires owner or ADMIN role).
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/dashboard/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Team deleted successfully"
+    }
+    ```
+- **View My Joined Teams**: `GET /api/dashboard/teams/joined`
+  - **Description**: Get a summary of all teams the current user has joined.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/teams/joined`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "teamId": "tma1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "teamName": "Team Rocket",
+            "description": "Blasting off again!",
+            "memberCount": 2,
+            "myRole": "ADMIN"
+        },
+        {
+            "teamId": "tmb1c2d3e4-f5a6-7890-1234-567890abcdef",
+            "teamName": "Team Phoenix",
+            "description": "Rising from the ashes",
+            "memberCount": 5,
+            "myRole": "MEMBER"
+        }
+    ]
+    ```
+- **Count My Joined Teams**: `GET /api/dashboard/teams/count`
+  - **Description**: Get the total number of teams the user is a member of.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/dashboard/teams/count`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "count": 2
+    }
+    ```
+- **Update Member Role**: `PATCH /api/dashboard/teams/{teamId}/members/{memberId}/role`
+  - **Description**: Update a member's role (e.g., promote to ADMIN or demote to MEMBER). Requires ADMIN role.
+  - **Postman**:
+    - **Method**: `PATCH`
+    - **URL**: `{{base_url}}/api/dashboard/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/members/b2c3d4e5-f6a7-8901-2345-67890abcdef1/role?role=ADMIN`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Params**: `role=ADMIN` (or `MEMBER`)
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "tma1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "name": "Team Rocket",
+        "description": "Blasting off again!",
+        "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "memberUsernames": ["johndoe", "janedoe"],
+        "createdAt": "2023-10-27T10:00:00.123456"
+    }
+    ```
 
-3.1 Create Project
-------------------
-Endpoint: POST /api/projects
-Description: Create a new project.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/projects
-- Headers: Authorization: Bearer <token>
-- Body: form-data
-  - title: Project X
-  - description: ...
-  - startDate: 2023-01-01
-  - endDate: 2023-12-31
-  - status: ACTIVE
-  - documents: [Select files] (Optional)
+---
 
-3.2 Update Project
-------------------
-Endpoint: PUT /api/projects/{projectId}
-Description: Update an existing project.
-Postman Setup:
-- Method: PUT
-- URL: {{base_url}}/api/projects/{projectId}
-- Headers: Authorization: Bearer <token>
-- Body: form-data (similar to create)
+## 3. Projects (`/api/projects`)
 
-3.3 Get Project
----------------
-Endpoint: GET /api/projects/{projectId}
-Description: Get project details.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/projects/{projectId}?includeDocuments=true
-- Headers: Authorization: Bearer <token>
+### 3.1 Create Project
+- **Endpoint**: `POST /api/projects`
+- **Description**: Create a new project.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/projects`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data`
+    - `title`: `New Feature Development`
+    - `description`: `Develop and implement user authentication module.`
+    - `startDate`: `2024-11-01`
+    - `endDate`: `2024-12-31`
+    - `status`: `ACTIVE`
+    - `documents`: (file) (optional)
+    - `documentDescription`: `Initial project brief` (optional)
+- **Expected Response (201 Created)**:
+  ```json
+  {
+      "message": "Project created successfully",
+      "project": {
+          "id": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "name": "New Feature Development",
+          "description": "Develop and implement user authentication module.",
+          "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "ownerEmail": "john.doe@example.com",
+          "ownerName": "John Doe",
+          "status": "ACTIVE",
+          "startDate": "2024-11-01",
+          "endDate": "2024-12-31",
+          "createdAt": "2024-10-31T15:30:00.123456",
+          "updatedAt": "2024-10-31T15:30:00.123456",
+          "documentCount": 0,
+          "documents": []
+      }
+  }
+  ```
 
-3.4 Get All Projects
---------------------
-Endpoint: GET /api/projects
-Description: Get all projects for the user.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/projects?status=ACTIVE
-- Headers: Authorization: Bearer <token>
+### 3.2 Update Project
+- **Endpoint**: `PUT /api/projects/{projectId}`
+- **Description**: Update an existing project.
+- **Postman**:
+  - **Method**: `PUT`
+  - **URL**: `{{base_url}}/api/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data` (include only fields to be updated)
+    - `name`: `Updated Feature Development`
+    - `status`: `COMPLETED`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "message": "Project updated successfully",
+      "project": {
+          "id": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "name": "Updated Feature Development",
+          "description": "Develop and implement user authentication module.",
+          "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "ownerEmail": "john.doe@example.com",
+          "ownerName": "John Doe",
+          "status": "COMPLETED",
+          "startDate": "2024-11-01",
+          "endDate": "2024-12-31",
+          "createdAt": "2024-10-31T15:30:00.123456",
+          "updatedAt": "2024-10-31T16:00:00.123456",
+          "documentCount": 0,
+          "documents": []
+      }
+  }
+  ```
 
-3.5 Delete Project
-------------------
-Endpoint: DELETE /api/projects/{projectId}
-Description: Delete a project.
-Postman Setup:
-- Method: DELETE
-- URL: {{base_url}}/api/projects/{projectId}
-- Headers: Authorization: Bearer <token>
+### 3.3 Get Project by ID
+- **Endpoint**: `GET /api/projects/{projectId}`
+- **Description**: Get project details by ID.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef?includeDocuments=true`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Params**: `includeDocuments=true` (optional, default is true)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "id": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+      "name": "Updated Feature Development",
+      "description": "Develop and implement user authentication module.",
+      "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+      "ownerEmail": "john.doe@example.com",
+      "ownerName": "John Doe",
+      "status": "COMPLETED",
+      "startDate": "2024-11-01",
+      "endDate": "2024-12-31",
+      "createdAt": "2024-10-31T15:30:00.123456",
+      "updatedAt": "2024-10-31T16:00:00.123456",
+      "documentCount": 1,
+      "documents": [
+          {
+              "id": "doc1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1",
+              "fileName": "project_brief.pdf",
+              "originalFileName": "ProjectBrief_v1.pdf",
+              "documentType": "PDF",
+              "fileSize": 102400,
+              "mimeType": "application/pdf",
+              "description": "Initial project brief",
+              "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "projectName": "Updated Feature Development",
+              "uploadedById": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "uploadedByEmail": "john.doe@example.com",
+              "createdAt": "2024-10-31T15:35:00.123456",
+              "updatedAt": "2024-10-31T15:35:00.123456"
+          }
+      ]
+  }
+  ```
 
-3.6 Upload Documents
---------------------
-Endpoint: POST /api/projects/{projectId}/documents
-Description: Upload documents to a project.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/projects/{projectId}/documents
-- Headers: Authorization: Bearer <token>
-- Body: form-data
-  - documents: [Select files]
-  - description: "Project docs"
+### 3.4 Get All Projects
+- **Endpoint**: `GET /api/projects`
+- **Description**: Get all projects for the authenticated user.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/projects?status=ACTIVE&includeDocuments=false`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Params**: `status=ACTIVE` (optional), `includeDocuments=false` (optional, default is false)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "count": 2,
+      "projects": [
+          {
+              "id": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "name": "Updated Feature Development",
+              "description": "Develop and implement user authentication module.",
+              "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "ownerEmail": "john.doe@example.com",
+              "ownerName": "John Doe",
+              "status": "COMPLETED",
+              "startDate": "2024-11-01",
+              "endDate": "2024-12-31",
+              "createdAt": "2024-10-31T15:30:00.123456",
+              "updatedAt": "2024-10-31T16:00:00.123456",
+              "documentCount": 1,
+              "documents": []
+          },
+          {
+              "id": "prjb1c2d3e4-f5a6-7890-1234-567890abcdef",
+              "name": "Marketing Campaign",
+              "description": "Launch new product marketing.",
+              "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "ownerEmail": "john.doe@example.com",
+              "ownerName": "John Doe",
+              "status": "ACTIVE",
+              "startDate": "2024-10-01",
+              "endDate": "2024-11-30",
+              "createdAt": "2024-09-20T10:00:00.123456",
+              "updatedAt": "2024-09-20T10:00:00.123456",
+              "documentCount": 0,
+              "documents": []
+          }
+      ]
+  }
+  ```
 
-3.7 Get Project Documents
--------------------------
-Endpoint: GET /api/projects/{projectId}/documents
-Description: Get list of documents in a project.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/projects/{projectId}/documents
-- Headers: Authorization: Bearer <token>
+### 3.5 Delete Project
+- **Endpoint**: `DELETE /api/projects/{projectId}`
+- **Description**: Delete a project.
+- **Postman**:
+  - **Method**: `DELETE`
+  - **URL**: `{{base_url}}/api/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "message": "Project deleted successfully"
+  }
+  ```
 
-3.8 Download Document
----------------------
-Endpoint: GET /api/projects/documents/{documentId}/download
-Description: Download a specific document.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/projects/documents/{documentId}/download
-- Headers: Authorization: Bearer <token>
+### 3.6 Upload Documents
+- **Endpoint**: `POST /api/projects/{projectId}/documents`
+- **Description**: Upload documents to a project.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef/documents`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data`
+    - `documents`: (file) (select one or more files)
+    - `description`: `Updated project brief` (optional)
+- **Expected Response (201 Created)**:
+  ```json
+  {
+      "message": "1 document(s) uploaded successfully",
+      "documents": [
+          {
+              "id": "doc1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1",
+              "fileName": "updated_brief.pdf",
+              "originalFileName": "UpdatedProjectBrief_v2.pdf",
+              "documentType": "PDF",
+              "fileSize": 204800,
+              "mimeType": "application/pdf",
+              "description": "Updated project brief",
+              "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "projectName": "Updated Feature Development",
+              "uploadedById": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "uploadedByEmail": "john.doe@example.com",
+              "createdAt": "2024-10-31T16:10:00.123456",
+              "updatedAt": "2024-10-31T16:10:00.123456"
+          }
+      ]
+  }
+  ```
 
-3.9 View Document (Inline)
---------------------------
-Endpoint: GET /api/projects/documents/{documentId}
-Description: View a document inline (e.g., PDF).
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/projects/documents/{documentId}
-- Headers: Authorization: Bearer <token>
+### 3.7 Get Project Documents
+- **Endpoint**: `GET /api/projects/{projectId}/documents`
+- **Description**: Get list of documents in a project.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef/documents?type=PDF`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Params**: `type=PDF` (optional, filter by DocumentType)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "count": 1,
+      "documents": [
+          {
+              "id": "doc1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1",
+              "fileName": "updated_brief.pdf",
+              "originalFileName": "UpdatedProjectBrief_v2.pdf",
+              "documentType": "PDF",
+              "fileSize": 204800,
+              "mimeType": "application/pdf",
+              "description": "Updated project brief",
+              "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "projectName": "Updated Feature Development",
+              "uploadedById": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "uploadedByEmail": "john.doe@example.com",
+              "createdAt": "2024-10-31T16:10:00.123456",
+              "updatedAt": "2024-10-31T16:10:00.123456"
+          }
+      ]
+  }
+  ```
 
-3.10 Delete Document
---------------------
-Endpoint: DELETE /api/projects/documents/{documentId}
-Description: Delete a specific document.
-Postman Setup:
-- Method: DELETE
-- URL: {{base_url}}/api/projects/documents/{documentId}
-- Headers: Authorization: Bearer <token>
+### 3.8 Download Document
+- **Endpoint**: `GET /api/projects/documents/{documentId}/download`
+- **Description**: Download a specific document.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/projects/documents/doc1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1/download`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  - Binary file content
+  - Headers: `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="UpdatedProjectBrief_v2.pdf"`
 
-3.11 Search Projects
---------------------
-Endpoint: GET /api/projects/search
-Description: Search projects by keyword.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/projects/search?keyword=alpha
-- Headers: Authorization: Bearer <token>
+### 3.9 View Document (Inline)
+- **Endpoint**: `GET /api/projects/documents/{documentId}`
+- **Description**: View a document inline (e.g., PDF in browser).
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/projects/documents/doc1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  - Binary file content
+  - Headers: `Content-Type: application/pdf`, `Content-Disposition: inline; filename="UpdatedProjectBrief_v2.pdf"`
 
-================================================================================
-4. TASKS (TaskController)
-================================================================================
+### 3.10 Delete Document
+- **Endpoint**: `DELETE /api/projects/documents/{documentId}`
+- **Description**: Delete a specific document.
+- **Postman**:
+  - **Method**: `DELETE`
+  - **URL**: `{{base_url}}/api/projects/documents/doc1a1b1c1-d1e1-f1g1-h1i1-j1k1l1m1n1o1`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "message": "Document deleted successfully"
+  }
+  ```
 
-4.1 Create User Task
---------------------
-Endpoint: POST /api/tasks/create/user
-Description: Create a personal task.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/tasks/create/user
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON)
-  { "title": "Task 1", "description": "...", "priority": "HIGH", "dueDate": "2023-12-31" }
+### 3.11 Search Projects
+- **Endpoint**: `GET /api/projects/search`
+- **Description**: Search projects by keyword in title or description.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/projects/search?keyword=feature`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Params**: `keyword=feature`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "count": 1,
+      "projects": [
+          {
+              "id": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "name": "Updated Feature Development",
+              "description": "Develop and implement user authentication module.",
+              "ownerId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+              "ownerEmail": "john.doe@example.com",
+              "ownerName": "John Doe",
+              "status": "COMPLETED",
+              "startDate": "2024-11-01",
+              "endDate": "2024-12-31",
+              "createdAt": "2024-10-31T15:30:00.123456",
+              "updatedAt": "2024-10-31T16:00:00.123456",
+              "documentCount": 1,
+              "documents": []
+          }
+      ]
+  }
+  ```
 
-4.2 Create Project Task
------------------------
-Endpoint: POST /api/tasks/create/project/{projectId}
-Description: Create a task for a project.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/tasks/create/project/{projectId}
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON) (same as above)
+---
 
-4.3 View Tasks
---------------
-- All User Tasks: GET /api/tasks/user/all
-- User Task by ID: GET /api/tasks/user/{taskId}
-- User Tasks by Status: GET /api/tasks/user/status/{status}
-- All Project Tasks: GET /api/tasks/project/{projectId}/all
-- Project Task by ID: GET /api/tasks/project/{projectId}/{taskId}
-- Project Tasks by Status: GET /api/tasks/project/{projectId}/status/{status}
+## 4. Tasks (`/api/tasks`)
 
-4.4 Search Tasks
-----------------
-- Search User Tasks: GET /api/tasks/user/search?keyword=...
-- Search Project Tasks: GET /api/tasks/project/{projectId}/search?keyword=...
+### 4.1 Create User Task
+- **Endpoint**: `POST /api/tasks/create/user`
+- **Description**: Create a personal task for the authenticated user.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/tasks/create/user`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "title": "Prepare presentation slides",
+        "description": "Create slides for Q4 review meeting.",
+        "priority": "HIGH",
+        "dueDate": "2024-11-10"
+    }
+    ```
+- **Expected Response (201 Created)**:
+  ```json
+  {
+      "message": "Task created successfully",
+      "task": {
+          "id": "tska1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "title": "Prepare presentation slides",
+          "description": "Create slides for Q4 review meeting.",
+          "status": "TO_DO",
+          "priority": "HIGH",
+          "dueDate": "2024-11-10",
+          "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "userName": "John Doe",
+          "createdAt": "2024-10-31T16:30:00.123456",
+          "updatedAt": "2024-10-31T16:30:00.123456"
+      }
+  }
+  ```
 
-4.5 Update/Delete Tasks
------------------------
-- Update User Task: PUT /api/tasks/user/{taskId}
-- Delete User Task: DELETE /api/tasks/user/{taskId}
-- Update Project Task: PUT /api/tasks/project/{projectId}/{taskId}
-- Delete Project Task: DELETE /api/tasks/project/{projectId}/{taskId}
+### 4.2 Create Project Task
+- **Endpoint**: `POST /api/tasks/create/project/{projectId}`
+- **Description**: Create a task for a specific project.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/tasks/create/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "title": "Code review for authentication",
+        "description": "Review PR for the new authentication module.",
+        "priority": "MEDIUM",
+        "dueDate": "2024-11-05"
+    }
+    ```
+- **Expected Response (201 Created)**:
+  ```json
+  {
+      "message": "Task created successfully for project",
+      "task": {
+          "id": "tskb1c2d3e4-f5a6-7890-1234-567890abcdef",
+          "title": "Code review for authentication",
+          "description": "Review PR for the new authentication module.",
+          "status": "TO_DO",
+          "priority": "MEDIUM",
+          "dueDate": "2024-11-05",
+          "createdAt": "2024-10-31T16:40:00.123456",
+          "updatedAt": "2024-10-31T16:40:00.123456",
+          "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+          "projectTitle": "Updated Feature Development"
+      }
+  }
+  ```
 
-================================================================================
-5. AI CHAT (ChatController)
-================================================================================
+### 4.3 View Tasks
+- **All User Tasks**: `GET /api/tasks/user/all`
+  - **Description**: Get all personal tasks for the authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/user/all`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "tska1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "title": "Prepare presentation slides",
+            "description": "Create slides for Q4 review meeting.",
+            "status": "TO_DO",
+            "priority": "HIGH",
+            "dueDate": "2024-11-10",
+            "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "userName": "John Doe",
+            "createdAt": "2024-10-31T16:30:00.123456",
+            "updatedAt": "2024-10-31T16:30:00.123456"
+        }
+    ]
+    ```
+- **User Task by ID**: `GET /api/tasks/user/{taskId}`
+  - **Description**: Get a specific personal task by its ID.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/user/tska1b2c3d4-e5f6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "tska1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "title": "Prepare presentation slides",
+        "description": "Create slides for Q4 review meeting.",
+        "status": "TO_DO",
+        "priority": "HIGH",
+        "dueDate": "2024-11-10",
+        "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "userName": "John Doe",
+        "createdAt": "2024-10-31T16:30:00.123456",
+        "updatedAt": "2024-10-31T16:30:00.123456"
+    }
+    ```
+- **User Tasks by Status**: `GET /api/tasks/user/status/{status}`
+  - **Description**: Get personal tasks filtered by status.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/user/status/TO_DO`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "tska1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "title": "Prepare presentation slides",
+            "description": "Create slides for Q4 review meeting.",
+            "status": "TO_DO",
+            "priority": "HIGH",
+            "dueDate": "2024-11-10",
+            "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "userName": "John Doe",
+            "createdAt": "2024-10-31T16:30:00.123456",
+            "updatedAt": "2024-10-31T16:30:00.123456"
+        }
+    ]
+    ```
+- **All Project Tasks**: `GET /api/tasks/project/{projectId}/all`
+  - **Description**: Get all tasks for a specific project.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef/all`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "tskb1c2d3e4-f5a6-7890-1234-567890abcdef",
+            "title": "Code review for authentication",
+            "description": "Review PR for the new authentication module.",
+            "status": "TO_DO",
+            "priority": "MEDIUM",
+            "dueDate": "2024-11-05",
+            "createdAt": "2024-10-31T16:40:00.123456",
+            "updatedAt": "2024-10-31T16:40:00.123456",
+            "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "projectTitle": "Updated Feature Development"
+        }
+    ]
+    ```
+- **Project Task by ID**: `GET /api/tasks/project/{projectId}/{taskId}`
+  - **Description**: Get a specific task within a project.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef/tskb1c2d3e4-f5a6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": "tskb1c2d3e4-f5a6-7890-1234-567890abcdef",
+        "title": "Code review for authentication",
+        "description": "Review PR for the new authentication module.",
+        "status": "TO_DO",
+        "priority": "MEDIUM",
+        "dueDate": "2024-11-05",
+        "createdAt": "2024-10-31T16:40:00.123456",
+        "updatedAt": "2024-10-31T16:40:00.123456",
+        "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "projectTitle": "Updated Feature Development"
+    }
+    ```
+- **Project Tasks by Status**: `GET /api/tasks/project/{projectId}/status/{status}`
+  - **Description**: Get tasks for a project filtered by status.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef/status/TO_DO`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "tskb1c2d3e4-f5a6-7890-1234-567890abcdef",
+            "title": "Code review for authentication",
+            "description": "Review PR for the new authentication module.",
+            "status": "TO_DO",
+            "priority": "MEDIUM",
+            "dueDate": "2024-11-05",
+            "createdAt": "2024-10-31T16:40:00.123456",
+            "updatedAt": "2024-10-31T16:40:00.123456",
+            "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "projectTitle": "Updated Feature Development"
+        }
+    ]
+    ```
 
-5.1 Send Message
-----------------
-Endpoint: POST /api/v1/chat/message
-Description: Send a message to the AI.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/v1/chat/message
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON)
-  { "message": "Hello AI", "model": "GPT_4", "chatId": 123 (optional) }
+### 4.4 Search Tasks
+- **Search User Tasks**: `GET /api/tasks/user/search?keyword=presentation`
+  - **Description**: Search personal tasks by keyword.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/user/search?keyword=presentation`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Params**: `keyword=presentation`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "tska1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "title": "Prepare presentation slides",
+            "description": "Create slides for Q4 review meeting.",
+            "status": "TO_DO",
+            "priority": "HIGH",
+            "dueDate": "2024-11-10",
+            "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "userName": "John Doe",
+            "createdAt": "2024-10-31T16:30:00.123456",
+            "updatedAt": "2024-10-31T16:30:00.123456"
+        }
+    ]
+    ```
+- **Search Project Tasks**: `GET /api/tasks/project/{projectId}/search?keyword=review`
+  - **Description**: Search tasks within a project by keyword.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/tasks/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef/search?keyword=review`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Params**: `keyword=review`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": "tskb1c2d3e4-f5a6-7890-1234-567890abcdef",
+            "title": "Code review for authentication",
+            "description": "Review PR for the new authentication module.",
+            "status": "TO_DO",
+            "priority": "MEDIUM",
+            "dueDate": "2024-11-05",
+            "createdAt": "2024-10-31T16:40:00.123456",
+            "updatedAt": "2024-10-31T16:40:00.123456",
+            "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "projectTitle": "Updated Feature Development"
+        }
+    ]
+    ```
 
-5.2 Send Message (Stream)
--------------------------
-Endpoint: POST /api/v1/chat/message/stream
-Description: Send a message and get a streaming response.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/v1/chat/message/stream
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON) (same as above)
+### 4.5 Update/Delete Tasks
+- **Update User Task**: `PUT /api/tasks/user/{taskId}`
+  - **Description**: Update a personal task.
+  - **Postman**:
+    - **Method**: `PUT`
+    - **URL**: `{{base_url}}/api/tasks/user/tska1b2c3d4-e5f6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Body**: `raw (JSON)`
+      ```json
+      {
+          "title": "Finalize presentation slides",
+          "status": "IN_PROGRESS"
+      }
+      ```
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Task updated successfully",
+        "task": {
+            "id": "tska1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "title": "Finalize presentation slides",
+            "description": "Create slides for Q4 review meeting.",
+            "status": "IN_PROGRESS",
+            "priority": "HIGH",
+            "dueDate": "2024-11-10",
+            "userId": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "userName": "John Doe",
+            "createdAt": "2024-10-31T16:30:00.123456",
+            "updatedAt": "2024-10-31T17:00:00.123456"
+        }
+    }
+    ```
+- **Delete User Task**: `DELETE /api/tasks/user/{taskId}`
+  - **Description**: Delete a personal task.
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/tasks/user/tska1b2c3d4-e5f6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Task deleted successfully"
+    }
+    ```
+- **Update Project Task**: `PUT /api/tasks/project/{projectId}/{taskId}`
+  - **Description**: Update a task within a project.
+  - **Postman**:
+    - **Method**: `PUT`
+    - **URL**: `{{base_url}}/api/tasks/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef/tskb1c2d3e4-f5a6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Body**: `raw (JSON)`
+      ```json
+      {
+          "status": "DONE"
+      }
+      ```
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Task updated successfully",
+        "task": {
+            "id": "tskb1c2d3e4-f5a6-7890-1234-567890abcdef",
+            "title": "Code review for authentication",
+            "description": "Review PR for the new authentication module.",
+            "status": "DONE",
+            "priority": "MEDIUM",
+            "dueDate": "2024-11-05",
+            "createdAt": "2024-10-31T16:40:00.123456",
+            "updatedAt": "2024-10-31T17:10:00.123456",
+            "projectId": "prja1b2c3d4-e5f6-7890-1234-567890abcdef",
+            "projectTitle": "Updated Feature Development"
+        }
+    }
+    ```
+- **Delete Project Task**: `DELETE /api/tasks/project/{projectId}/{taskId}`
+  - **Description**: Delete a task within a project.
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/tasks/project/prja1b2c3d4-e5f6-7890-1234-567890abcdef/tskb1c2d3e4-f5a6-7890-1234-567890abcdef`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Task deleted successfully"
+    }
+    ```
 
-5.3 Chat Management
--------------------
-- Create New Chat: POST /api/v1/chat/new?model=GPT_4
-- List Chats: GET /api/v1/chat/list
-- Get Chat History: GET /api/v1/chat/{chatId}
-- Delete Chat: DELETE /api/v1/chat/{chatId}
-- Clear Chat: POST /api/v1/chat/{chatId}/clear
+---
 
-================================================================================
-6. EXTERNAL CHAT (ExternalChatController)
-================================================================================
+## 5. AI Chat (`/api/v1/chat`)
 
-6.1 Send External Message
--------------------------
-Endpoint: POST /api/v1/external-chat/message
-Description: Chat with external APIs (Netflix, Spotify, etc.).
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/v1/external-chat/message
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON)
-  { "message": "Recommend a movie", "model": "NETFLIX", "chatId": ... }
+### 5.1 Send Message
+- **Endpoint**: `POST /api/v1/chat/message`
+- **Description**: Send a message to the AI and get a non-streaming response.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/chat/message`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "message": "What is the capital of France?",
+        "model": "GPT_4",
+        "chatId": 1234567890123456789 // Optional: if continuing an existing chat
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "chatId": 1234567890123456789,
+      "model": "GPT_4",
+      "response": "The capital of France is Paris.",
+      "timestamp": "2024-10-31T17:30:00.123456"
+  }
+  ```
 
-6.2 Other External Chat Endpoints
----------------------------------
-- Stream Message: POST /api/v1/external-chat/message/stream
-- List Chats: GET /api/v1/external-chat/list
-- Get History: GET /api/v1/external-chat/{chatId}
-- Create New: POST /api/v1/external-chat/new?model=NETFLIX
-- Delete: DELETE /api/v1/external-chat/{chatId}
-- Clear: POST /api/v1/external-chat/{chatId}/clear
+### 5.2 Send Message (Stream)
+- **Endpoint**: `POST /api/v1/chat/message/stream`
+- **Description**: Send a message to the AI and get a streaming response.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/chat/message/stream`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "message": "Tell me a story about a brave knight.",
+        "model": "GPT_4",
+        "chatId": 9876543210987654321 // Optional
+    }
+    ```
+- **Expected Response (200 OK)**:
+  - `Content-Type: text/event-stream`
+  - A stream of text chunks, e.g.:
+    ```
+    data: Once upon a time,
+    data: in a land far, far away,
+    data: there lived a brave knight...
+    ```
 
-================================================================================
-7. DOCUMENT PROCESSING (DocumentController)
-================================================================================
+### 5.3 Chat Management
+- **Create New Chat**: `POST /api/v1/chat/new?model=GPT_4`
+  - **Description**: Creates a new chat session.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/v1/chat/new?model=GPT_4`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Params**: `model=GPT_4`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "chatId": 1234567890123456789,
+        "title": "New Chat",
+        "createdAt": "2024-10-31T17:40:00.123456",
+        "updatedAt": "2024-10-31T17:40:00.123456",
+        "messageCount": 0
+    }
+    ```
+- **List Chats**: `GET /api/v1/chat/list`
+  - **Description**: Get a list of all chat sessions for the authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/chat/list`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "chatId": 1234567890123456789,
+            "title": "What is the capital of France?",
+            "createdAt": "2024-10-31T17:30:00.123456",
+            "updatedAt": "2024-10-31T17:30:00.123456",
+            "messageCount": 2
+        },
+        {
+            "chatId": 9876543210987654321,
+            "title": "Story about a knight",
+            "createdAt": "2024-10-31T17:35:00.123456",
+            "updatedAt": "2024-10-31T17:35:00.123456",
+            "messageCount": 4
+        }
+    ]
+    ```
+- **Get Chat History**: `GET /api/v1/chat/{chatId}`
+  - **Description**: Get the full message history for a specific chat session.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/chat/1234567890123456789`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "chatId": 1234567890123456789,
+        "title": "What is the capital of France?",
+        "createdAt": "2024-10-31T17:30:00.123456",
+        "updatedAt": "2024-10-31T17:30:00.123456",
+        "messageCount": 2,
+        "messages": [
+            {
+                "id": 1,
+                "sender": "USER",
+                "content": "What is the capital of France?",
+                "timestamp": "2024-10-31T17:30:00.123456"
+            },
+            {
+                "id": 2,
+                "sender": "AI",
+                "content": "The capital of France is Paris.",
+                "timestamp": "2024-10-31T17:30:05.123456"
+            }
+        ]
+    }
+    ```
+- **Delete Chat**: `DELETE /api/v1/chat/{chatId}`
+  - **Description**: Deletes a chat session (soft delete).
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/v1/chat/1234567890123456789`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (204 No Content)**: (Empty response body)
+- **Clear Chat**: `POST /api/v1/chat/{chatId}/clear`
+  - **Description**: Clears all messages from a chat session.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/v1/chat/9876543210987654321/clear`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (204 No Content)**: (Empty response body)
 
-7.1 Upload Document
--------------------
-Endpoint: POST /api/v1/documents/upload
-Description: Upload a document without processing.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/v1/documents/upload
-- Headers: Authorization: Bearer <token>
-- Body: form-data (file)
+---
 
-7.2 Process Document
---------------------
-Endpoint: POST /api/v1/documents/process
-Description: Upload and process a document in one step.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/v1/documents/process
-- Headers: Authorization: Bearer <token>
-- Body: form-data
-  - file: [Select file]
-  - functionality: SUMMARIZE (or TRANSLATE, etc.)
-  - question: "..." (optional)
+## 6. External Chat (`/api/v1/external-chat`)
 
-7.3 Process Existing Document
------------------------------
-Endpoint: POST /api/v1/documents/{documentId}/process
-Description: Process an already uploaded document.
-Postman Setup:
-- Method: POST
-- URL: {{base_url}}/api/v1/documents/{documentId}/process
-- Headers: Authorization: Bearer <token>
-- Body: raw (JSON)
-  { "functionality": "SUMMARIZE", "question": "..." }
+### 6.1 Send External Message
+- **Endpoint**: `POST /api/v1/external-chat/message`
+- **Description**: Chat with external APIs (Netflix, Spotify, Weather, etc.) and get a non-streaming response.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/external-chat/message`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "message": "Recommend a comedy movie on Netflix.",
+        "model": "NETFLIX",
+        "chatId": 1122334455667788990 // Optional
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "chatId": 1122334455667788990,
+      "model": "NETFLIX",
+      "response": "I recommend 'Don't Look Up' for a comedy movie on Netflix.",
+      "timestamp": "2024-10-31T17:50:00.123456"
+  }
+  ```
 
-7.4 Document Management
------------------------
-- Get User Documents: GET /api/v1/documents
-- Get Document by ID: GET /api/v1/documents/{id}
-- Delete Document: DELETE /api/v1/documents/{id}
-- Get Document History: GET /api/v1/documents/{id}/history
-- Get Document Count: GET /api/v1/documents/count
-- Get Functionalities: GET /api/v1/documents/functionalities
+### 6.2 Other External Chat Endpoints
+- **Stream Message**: `POST /api/v1/external-chat/message/stream`
+  - **Description**: Send a message to an external AI and get a streaming response.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/v1/external-chat/message/stream`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Body**: `raw (JSON)`: `{ "message": "What's the weather in London?", "model": "WEATHER", "chatId": ... }`
+  - **Expected Response (200 OK)**: `text/event-stream` (stream of text chunks)
+- **List Chats**: `GET /api/v1/external-chat/list`
+  - **Description**: Get a list of all external chat sessions for the authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/external-chat/list`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**: `List<ChatHistoryResponse>` (similar to internal chat list)
+- **Get History**: `GET /api/v1/external-chat/{chatId}`
+  - **Description**: Get the full message history for a specific external chat session.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/external-chat/1122334455667788990`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**: `ChatHistoryResponse` (similar to internal chat history)
+- **Create New**: `POST /api/v1/external-chat/new?model=NETFLIX`
+  - **Description**: Creates a new external chat session.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/v1/external-chat/new?model=NETFLIX`
+    - **Headers**: `Authorization: Bearer <your_token>`
+    - **Params**: `model=NETFLIX`
+  - **Expected Response (200 OK)**: `ChatHistoryResponse` (similar to internal chat new)
+- **Delete**: `DELETE /api/v1/external-chat/{chatId}`
+  - **Description**: Deletes an external chat session.
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/v1/external-chat/1122334455667788990`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (204 No Content)**: (Empty response body)
+- **Clear**: `POST /api/v1/external-chat/{chatId}/clear`
+  - **Description**: Clears all messages from an external chat session.
+  - **Postman**:
+    - **Method**: `POST`
+    - **URL**: `{{base_url}}/api/v1/external-chat/1122334455667788990/clear`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (204 No Content)**: (Empty response body)
 
-================================================================================
-8. HISTORY (HistoryController)
-================================================================================
+---
 
-8.1 Get User History
---------------------
-Endpoint: GET /api/v1/history
-Description: Get all processing history for the user.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/v1/history
-- Headers: Authorization: Bearer <token>
+## 7. Document Processing (`/api/v1/documents`)
 
-8.2 Get History by Functionality
---------------------------------
-Endpoint: GET /api/v1/history/functionality/{type}
-Description: Get history filtered by functionality type.
-Postman Setup:
-- Method: GET
-- URL: {{base_url}}/api/v1/history/functionality/SUMMARIZE
-- Headers: Authorization: Bearer <token>
+### 7.1 Upload Document
+- **Endpoint**: `POST /api/v1/documents/upload`
+- **Description**: Uploads a document without immediate AI processing.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/documents/upload`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data`
+    - `file`: (file) (e.g., a PDF or DOCX file)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "success": true,
+      "message": "Document uploaded and processed successfully",
+      "documentId": 1,
+      "fileName": "my_report.pdf",
+      "fileType": "pdf",
+      "fileSize": 512000,
+      "extractedTextLength": 1500,
+      "uploadedAt": "2024-10-31T18:00:00.123456",
+      "error": null
+  }
+  ```
+
+### 7.2 Process Document (Upload & Run)
+- **Endpoint**: `POST /api/v1/documents/process`
+- **Description**: Uploads a document and immediately processes it with AI.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/documents/process`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data`
+    - `file`: (file) (e.g., a PDF or DOCX file)
+    - `functionality`: `SUMMARIZE` (or `TRANSLATE`, `EXTRACT_KEYWORDS`, `Q_AND_A`)
+    - `question`: `What is the main conclusion?` (required for `Q_AND_A`, optional for others)
+    - `customPrompt`: `Summarize in 5 bullet points.` (optional)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "success": true,
+      "documentId": 2,
+      "functionality": "SUMMARIZE",
+      "result": "This document discusses the Q4 financial performance, highlighting growth in revenue and challenges in market expansion.",
+      "timestamp": "2024-10-31T18:05:00.123456",
+      "error": null
+  }
+  ```
+
+### 7.3 Process Existing Document
+- **Endpoint**: `POST /api/v1/documents/{documentId}/process`
+- **Description**: Processes an already uploaded document with AI.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/documents/1/process`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "functionality": "Q_AND_A",
+        "question": "What are the key findings?",
+        "customPrompt": null
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "success": true,
+      "documentId": 1,
+      "functionality": "Q_AND_A",
+      "result": "The key findings indicate a strong market position and a need for product diversification.",
+      "timestamp": "2024-10-31T18:10:00.123456",
+      "error": null
+  }
+  ```
+
+### 7.4 Document Management
+- **Get All User Documents**: `GET /api/v1/documents`
+  - **Description**: Get a list of all documents uploaded by the authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/documents`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": 1,
+            "fileName": "my_report.pdf",
+            "fileType": "pdf",
+            "fileSize": 512000,
+            "extractedText": "...", // Potentially truncated or omitted for brevity
+            "uploadedAt": "2024-10-31T18:00:00.123456",
+            "status": "COMPLETED",
+            "user": { /* User details */ }
+        },
+        {
+            "id": 2,
+            "fileName": "meeting_notes.docx",
+            "fileType": "docx",
+            "fileSize": 128000,
+            "extractedText": "...",
+            "uploadedAt": "2024-10-30T09:00:00.123456",
+            "status": "COMPLETED",
+            "user": { /* User details */ }
+        }
+    ]
+    ```
+- **Get Document by ID**: `GET /api/v1/documents/{id}`
+  - **Description**: Get details of a specific document by its ID.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/documents/1`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "id": 1,
+        "fileName": "my_report.pdf",
+        "fileType": "pdf",
+        "fileSize": 512000,
+        "extractedText": "This is the full extracted text content of the document...",
+        "uploadedAt": "2024-10-31T18:00:00.123456",
+        "status": "COMPLETED",
+        "user": { /* User details */ }
+    }
+    ```
+- **Delete Document**: `DELETE /api/v1/documents/{id}`
+  - **Description**: Deletes a document.
+  - **Postman**:
+    - **Method**: `DELETE`
+    - **URL**: `{{base_url}}/api/v1/documents/1`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "message": "Document deleted successfully"
+    }
+    ```
+- **Get Document History**: `GET /api/v1/documents/{id}/history`
+  - **Description**: Get the processing history for a specific document.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/documents/1/history`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "id": 101,
+            "documentId": 1,
+            "functionality": "SUMMARIZE",
+            "inputQuestion": null,
+            "outputResult": "Summary of report...",
+            "processedAt": "2024-10-31T18:05:00.123456"
+        },
+        {
+            "id": 102,
+            "documentId": 1,
+            "functionality": "Q_AND_A",
+            "inputQuestion": "What are the key findings?",
+            "outputResult": "The key findings are...",
+            "processedAt": "2024-10-31T18:10:00.123456"
+        }
+    ]
+    ```
+- **Get Document Count**: `GET /api/v1/documents/count`
+  - **Description**: Get the total number of documents uploaded by the authenticated user.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/documents/count`
+    - **Headers**: `Authorization: Bearer <your_token>`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "count": 2
+    }
+    ```
+- **Get Functionalities**: `GET /api/v1/documents/functionalities`
+  - **Description**: Get a list of available AI processing functionalities.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/documents/functionalities`
+  - **Expected Response (200 OK)**:
+    ```json
+    [
+        {
+            "name": "SUMMARIZE",
+            "description": "Summarize the document content.",
+            "defaultModel": "GPT_4"
+        },
+        {
+            "name": "Q_AND_A",
+            "description": "Answer questions based on the document.",
+            "defaultModel": "GPT_4"
+        },
+        {
+            "name": "TRANSLATE",
+            "description": "Translate the document content.",
+            "defaultModel": "GPT_4"
+        }
+    ]
+    ```
+- **Health Check**: `GET /api/v1/documents/health`
+  - **Description**: Simple health check for the document processing service.
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/documents/health`
+  - **Expected Response (200 OK)**:
+    ```json
+    {
+        "healthy": true,
+        "message": "Document AI Assistant is running",
+        "timestamp": 1700000000000
+    }
+    ```
+
+---
+
+## 8. Processing History (`/api/v1/history`)
+
+### 8.1 Get User History
+- **Endpoint**: `GET /api/v1/history`
+- **Description**: Get all AI processing history for the authenticated user.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/v1/history`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  ```json
+  [
+      {
+          "id": 101,
+          "documentId": 1,
+          "functionality": "SUMMARIZE",
+          "inputQuestion": null,
+          "outputResult": "Summary of report...",
+          "processedAt": "2024-10-31T18:05:00.123456"
+      },
+      {
+          "id": 102,
+          "documentId": 1,
+          "functionality": "Q_AND_A",
+          "inputQuestion": "What are the key findings?",
+          "outputResult": "The key findings are...",
+          "processedAt": "2024-10-31T18:10:00.123456"
+      }
+  ]
+  ```
+
+### 8.2 Get History by Functionality
+- **Endpoint**: `GET /api/v1/history/functionality/{type}`
+- **Description**: Get AI processing history filtered by functionality type for the authenticated user.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/v1/history/functionality/SUMMARIZE`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Path Variable**: `type=SUMMARIZE` (or `Q_AND_A`, etc.)
+- **Expected Response (200 OK)**:
+  ```json
+  [
+      {
+          "id": 101,
+          "documentId": 1,
+          "functionality": "SUMMARIZE",
+          "inputQuestion": null,
+          "outputResult": "Summary of report...",
+          "processedAt": "2024-10-31T18:05:00.123456"
+      }
+  ]
+  ```
+
+### 8.3 Admin History
+- **Get All History (Admin)**: `GET /api/v1/history/admin/all`
+  - **Description**: Get all AI processing history across all users (ADMIN role required).
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/history/admin/all`
+    - **Headers**: `Authorization: Bearer <admin_token>`
+  - **Expected Response (200 OK)**: `List<ProcessingHistoryResponse>` (similar to user history, but potentially from multiple users)
+- **Get History by Functionality (Admin)**: `GET /api/v1/history/admin/functionality/{type}`
+  - **Description**: Get AI processing history filtered by functionality type across all users (ADMIN role required).
+  - **Postman**:
+    - **Method**: `GET`
+    - **URL**: `{{base_url}}/api/v1/history/admin/functionality/TRANSLATE`
+    - **Headers**: `Authorization: Bearer <admin_token>`
+    - **Path Variable**: `type=TRANSLATE`
+  - **Expected Response (200 OK)**: `List<ProcessingHistoryResponse>` (similar to user history by functionality)
+
+---
+
+## 9. Test (`/api/test`)
+
+### 9.1 Say Hello
+- **Endpoint**: `GET /api/test/hello`
+- **Description**: Returns a simple plain text message.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/test/hello`
+- **Expected Response (200 OK)**:
+  ```
+  Hello from Test Controller!
+  ```
+
+### 9.2 Get Simple Message
+- **Endpoint**: `GET /api/test/message`
+- **Description**: Returns a simple JSON message.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/test/message`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "message": "This is another simple message for testing."
+  }
+  ```

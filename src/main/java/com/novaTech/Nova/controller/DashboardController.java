@@ -3,6 +3,7 @@ package com.novaTech.Nova.controller;
 import com.novaTech.Nova.DTO.*;
 import com.novaTech.Nova.Entities.Enums.TeamStatus;
 import com.novaTech.Nova.Entities.User;
+import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.ProjectService;
 import com.novaTech.Nova.Services.TaskService;
 import com.novaTech.Nova.Services.UserRegistrationService;
@@ -12,6 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,15 +32,41 @@ public class DashboardController {
     private final UserRegistrationService userRegistrationService;
     private final UserService userService;
 
+    private UserPrincipal userPrincipal(){
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null) {
+            log.error("No authentication found in SecurityContext");
+            throw new RuntimeException("User not authenticated");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (!(principal instanceof UserPrincipal)) {
+            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            throw new RuntimeException("Invalid authentication principal");
+        }
+
+        UserPrincipal userPrincipal = (UserPrincipal) principal;
+        log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
+                userPrincipal.getEmail(), userPrincipal.getUserId());
+
+        return userPrincipal;
+    }
+
+
     @GetMapping("/stats")
-    public ResponseEntity<?> getDashboardStats(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getDashboardStats() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
+                log.error("User not found for username: {}", username);
+                throw new RuntimeException("User not found for username: " + username);
             }
+
 
             long totalProjects = projectService.getProjectCount(user.getId());
             long completedProjects = projectService.getCompletedProjectCount(user.getId());
@@ -67,12 +96,15 @@ public class DashboardController {
     }
 
     @GetMapping("/projects")
-    public ResponseEntity<?> getProjectSummaries(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getProjectSummaries() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
+                        "error", "User not found"
                 ));
             }
 
@@ -88,9 +120,11 @@ public class DashboardController {
     }
 
     @GetMapping("/projects/overdue")
-    public ResponseEntity<?> getOverdueProjects(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getOverdueProjects() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal =  userPrincipal();
+            String username = principal.getUsername();
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                         "error", "Invalid authentication token"
@@ -109,9 +143,11 @@ public class DashboardController {
     }
 
     @GetMapping("/tasks")
-    public ResponseEntity<?> getTaskSummaries(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getTaskSummaries() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal =  userPrincipal();
+            String username = principal.getUsername();
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                         "error", "Invalid authentication token"
@@ -130,9 +166,11 @@ public class DashboardController {
     }
 
     @GetMapping("/tasks/overdue")
-    public ResponseEntity<?> getOverdueTasks(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getOverdueTasks() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal =  userPrincipal();
+            String username = principal.getUsername();
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                         "error", "Invalid authentication token"
@@ -155,9 +193,12 @@ public class DashboardController {
     // ========================
 
     @PostMapping("/users/search")
-    public ResponseEntity<?> searchUsers(@RequestBody SearchUserRequest request, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> searchUsers(@RequestBody SearchUserRequest request) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -168,9 +209,12 @@ public class DashboardController {
     }
 
     @PostMapping("/teams")
-    public ResponseEntity<?> createTeam(@RequestBody CreateTeamRequest request, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> createTeam(@RequestBody CreateTeamRequest request) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -181,9 +225,12 @@ public class DashboardController {
     }
 
     @PostMapping("/teams/{teamId}/members")
-    public ResponseEntity<?> addTeamMember(@PathVariable UUID teamId, @RequestBody AddTeamRequest request, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> addTeamMember(@PathVariable UUID teamId, @RequestBody AddTeamRequest request) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -194,9 +241,12 @@ public class DashboardController {
     }
 
     @GetMapping("/teams/{teamId}/members")
-    public ResponseEntity<?> viewTeamMembers(@PathVariable UUID teamId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewTeamMembers(@PathVariable UUID teamId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -207,9 +257,12 @@ public class DashboardController {
     }
 
     @GetMapping("/teams/{teamId}/members/details")
-    public ResponseEntity<?> viewTeamMembersWithRole(@PathVariable UUID teamId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewTeamMembersWithRole(@PathVariable UUID teamId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -220,9 +273,12 @@ public class DashboardController {
     }
 
     @DeleteMapping("/teams/{teamId}/members/{memberId}")
-    public ResponseEntity<?> removeTeamMember(@PathVariable UUID teamId, @PathVariable UUID memberId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> removeTeamMember(@PathVariable UUID teamId, @PathVariable UUID memberId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -233,9 +289,11 @@ public class DashboardController {
     }
 
     @DeleteMapping("/teams/{teamId}")
-    public ResponseEntity<?> deleteTeam(@PathVariable UUID teamId, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> deleteTeam(@PathVariable UUID teamId) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -247,9 +305,11 @@ public class DashboardController {
     }
 
     @GetMapping("/teams/joined")
-    public ResponseEntity<?> viewJoinedTeams(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> viewJoinedTeams() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -260,9 +320,12 @@ public class DashboardController {
     }
 
     @GetMapping("/teams/count")
-    public ResponseEntity<?> getJoinedTeamsCount(@RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> getJoinedTeamsCount() {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
@@ -273,9 +336,11 @@ public class DashboardController {
     }
 
     @PatchMapping("/teams/{teamId}/members/{memberId}/role")
-    public ResponseEntity<?> updateMemberRole(@PathVariable UUID teamId, @PathVariable UUID memberId, @RequestParam TeamStatus role, @RequestHeader(HttpHeaders.AUTHORIZATION) String authHeader) {
+    public ResponseEntity<?> updateMemberRole(@PathVariable UUID teamId, @PathVariable UUID memberId, @RequestParam TeamStatus role) {
         try {
-            User user = userRegistrationService.getUserFromToken(authHeader);
+            UserPrincipal principal = userPrincipal();
+            String username = principal.getUsername();
+            User user = userRegistrationService.findByEmail(username);
             if (user == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
             }
