@@ -5,7 +5,7 @@ import com.novaTech.Nova.Entities.meeting.MeetingParticipant;
 import com.novaTech.Nova.Entities.meeting.ScheduledMeeting;
 import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.ZoomServiceImpl.MeetingService;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -13,6 +13,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,39 +34,33 @@ public class MeetingController {
         return (UserPrincipal) authentication.getPrincipal();
     }
 
-    /**
-     * Create an instant meeting
-     * POST /api/meetings/instant
-     */
     @PostMapping("/instant")
-    public ResponseEntity<MeetingResponse> createInstantMeeting(
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) Boolean waitingRoomEnabled,
-            @RequestParam(required = false) Boolean recordingEnabled,
-            @RequestParam(required = false) UUID teamId) {
+    public ResponseEntity<Map<String, Object>> createInstantMeeting(@RequestBody InstantMeetingRequest request) {
+        log.info("Creating instant meeting with request: {}", request);
 
         UUID hostId = getUserPrincipal().getUserId();
 
         Meeting meeting = meetingService.createInstantMeeting(
-                hostId, title, waitingRoomEnabled, recordingEnabled, teamId
+                hostId,
+                request.getTitle(),
+                request.getWaitingRoomEnabled(),
+                request.getRecordingEnabled(),
+                request.getTeamId()
         );
 
-        // Get call credentials for the host
         Map<String, Object> callCredentials = meetingService.getCallCredentials(meeting.getId(), hostId);
 
-        return ResponseEntity.ok(MeetingResponse.builder()
-                .meetingId(meeting.getId())
-                .meetingLink(meeting.getMeetingLink())
-                .title(meeting.getTitle())
-                .status(meeting.getStatus().toString())
-                .callCredentials(callCredentials)
-                .message("Meeting created successfully. Use the call credentials to join.")
-                .build());
+        Map<String, Object> response = new HashMap<>();
+        response.put("meetingId", meeting.getId());
+        response.put("meetingLink", meeting.getMeetingLink());
+        response.put("title", meeting.getTitle());
+        response.put("status", meeting.getStatus().toString());
+        response.put("callCredentials", callCredentials);
+        response.put("message", "Meeting created successfully");
+
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Schedule a meeting
-     */
     @PostMapping("/schedule")
     public ResponseEntity<ScheduledMeeting> scheduleMeeting(@RequestBody ScheduleMeetingRequest request) {
         UUID organizerId = getUserPrincipal().getUserId();
@@ -84,138 +79,104 @@ public class MeetingController {
         return ResponseEntity.ok(meeting);
     }
 
-    /**
-     * Get call credentials for joining a meeting
-     * This endpoint automatically provisions the user in GetStream
-     *
-     * GET /api/meetings/{meetingId}/credentials
-     */
     @GetMapping("/{meetingId}/credentials")
-    public ResponseEntity<CallCredentialsResponse> getCallCredentials(@PathVariable Long meetingId) {
+    public ResponseEntity<Map<String, Object>> getCallCredentials(@PathVariable Long meetingId) {
         UUID userId = getUserPrincipal().getUserId();
 
         Map<String, Object> credentials = meetingService.getCallCredentials(meetingId, userId);
 
-        return ResponseEntity.ok(CallCredentialsResponse.builder()
-                .credentials(credentials)
-                .message("Use these credentials to initialize the GetStream Video call on your frontend")
-                .build());
+        Map<String, Object> response = new HashMap<>();
+        response.put("credentials", credentials);
+        response.put("message", "Use these credentials to initialize the GetStream Video call");
+
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Join a meeting (records participation in database)
-     */
     @PostMapping("/{meetingId}/join")
-    public ResponseEntity<JoinMeetingResponse> joinMeeting(@PathVariable Long meetingId) {
+    public ResponseEntity<Map<String, Object>> joinMeeting(@PathVariable Long meetingId) {
         UUID userId = getUserPrincipal().getUserId();
 
-        // Record participation
-        MeetingParticipant participant = meetingService.joinMeeting(meetingId, userId);
+        log.info("User {} joining meeting {}", userId, meetingId);
 
-        // Get call credentials
+        MeetingParticipant participant = meetingService.joinMeeting(meetingId, userId);
         Map<String, Object> credentials = meetingService.getCallCredentials(meetingId, userId);
 
-        return ResponseEntity.ok(JoinMeetingResponse.builder()
-                .participant(participant)
-                .callCredentials(credentials)
-                .message("Successfully joined meeting. Use credentials to connect to video call.")
-                .build());
+        Map<String, Object> response = new HashMap<>();
+        response.put("participant", participant);
+        response.put("callCredentials", credentials);
+        response.put("message", "Successfully joined meeting");
+
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Leave a meeting
-     */
     @PostMapping("/{meetingId}/leave")
-    public ResponseEntity<Void> leaveMeeting(@PathVariable Long meetingId) {
+    public ResponseEntity<Map<String, String>> leaveMeeting(@PathVariable Long meetingId) {
         UUID userId = getUserPrincipal().getUserId();
+        log.info("User {} leaving meeting {}", userId, meetingId);
         meetingService.leaveMeeting(meetingId, userId);
-        return ResponseEntity.ok().build();
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Successfully left meeting");
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * End a meeting (host only)
-     */
     @PostMapping("/{meetingId}/end")
-    public ResponseEntity<Void> endMeeting(@PathVariable Long meetingId) {
+    public ResponseEntity<Map<String, String>> endMeeting(@PathVariable Long meetingId) {
         UUID userId = getUserPrincipal().getUserId();
         meetingService.endMeeting(meetingId, userId);
-        return ResponseEntity.ok().build();
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Meeting ended successfully");
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Admit participant from waiting room
-     */
     @PostMapping("/{meetingId}/admit")
-    public ResponseEntity<Void> admitFromWaitingRoom(
+    public ResponseEntity<Map<String, String>> admitFromWaitingRoom(
             @PathVariable Long meetingId,
             @RequestParam UUID participantUserId) {
 
         UUID hostId = getUserPrincipal().getUserId();
         meetingService.admitFromWaitingRoom(meetingId, participantUserId, hostId);
-        return ResponseEntity.ok().build();
+
+        Map<String, String> response = new HashMap<>();
+        response.put("message", "Participant admitted successfully");
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get active participants
-     */
     @GetMapping("/{meetingId}/participants")
     public ResponseEntity<List<MeetingParticipant>> getActiveParticipants(@PathVariable Long meetingId) {
         return ResponseEntity.ok(meetingService.getActiveParticipants(meetingId));
     }
 
-    /**
-     * Get waiting room participants
-     */
     @GetMapping("/{meetingId}/waiting-room")
     public ResponseEntity<List<MeetingParticipant>> getWaitingRoomParticipants(@PathVariable Long meetingId) {
         return ResponseEntity.ok(meetingService.getWaitingRoomParticipants(meetingId));
     }
 
-    /**
-     * Get meeting details
-     */
     @GetMapping("/{meetingId}")
     public ResponseEntity<Meeting> getMeeting(@PathVariable Long meetingId) {
         return ResponseEntity.ok(meetingService.getMeetingById(meetingId));
     }
 
-    /**
-     * Get user's meetings
-     */
     @GetMapping("/my")
     public ResponseEntity<List<Meeting>> getUserMeetings() {
         UUID userId = getUserPrincipal().getUserId();
         return ResponseEntity.ok(meetingService.getUserMeetings(userId));
     }
 
-    // DTOs
-    @lombok.Data
-    @lombok.Builder
-    public static class MeetingResponse {
-        private Long meetingId;
-        private String meetingLink;
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class InstantMeetingRequest {
         private String title;
-        private String status;
-        private Map<String, Object> callCredentials;
-        private String message;
+        private Boolean waitingRoomEnabled;
+        private Boolean recordingEnabled;
+        private UUID teamId;
     }
 
-    @lombok.Data
-    @lombok.Builder
-    public static class JoinMeetingResponse {
-        private MeetingParticipant participant;
-        private Map<String, Object> callCredentials;
-        private String message;
-    }
-
-    @lombok.Data
-    @lombok.Builder
-    public static class CallCredentialsResponse {
-        private Map<String, Object> credentials;
-        private String message;
-    }
-
-    @lombok.Data
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class ScheduleMeetingRequest {
         private String title;
         private String description;

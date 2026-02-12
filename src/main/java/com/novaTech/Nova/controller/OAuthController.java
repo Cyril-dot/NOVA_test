@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.view.RedirectView;
 
 @Controller
-@RequestMapping("/oauth2")
+@RequestMapping("/api/oauth2")  // ✅ moved under /api to avoid conflict with Spring's /oauth2/** internal paths
 public class OAuthController {
 
     private final ClientRegistrationRepository clientRegistrationRepository;
@@ -18,13 +18,11 @@ public class OAuthController {
 
     @GetMapping("/login/google")
     public RedirectView loginWithGoogle() {
-        // Spring Security handles the redirect to Google's OAuth login automatically
         return new RedirectView("/oauth2/authorization/google");
     }
 
     @GetMapping("/login/github")
     public RedirectView loginWithGithub() {
-        // Spring Security handles the redirect to GitHub's OAuth login automatically
         return new RedirectView("/oauth2/authorization/github");
     }
 }

@@ -51,3 +51,57 @@
             UUID userId = userPrincipal().getUserId();
             return ResponseEntity.ok(starredService.getUserStarredMessages(userId));
         }
+
+
+workspace
+
+
+    DocType type = docType;
+        switch (type) {
+            case HTML ->
+
+        }
+          {
+         "email":"kwame.mensah42@gmail.com",
+        "password":"StrongPass789"
+
+          }
+
+
+          package com.novaTech.Nova.Services.workSpace;
+
+          import com.novaTech.Nova.DTO.ProjectWorkSpaceCreationResponse;
+          import com.novaTech.Nova.DTO.WorkSpaceCreationDto;
+          import com.novaTech.Nova.Entities.Project;
+          import com.novaTech.Nova.Entities.ProjectDocument;
+          import com.novaTech.Nova.Entities.User;
+          import com.novaTech.Nova.Entities.repo.UserRepo;
+          import lombok.RequiredArgsConstructor;
+          import lombok.extern.slf4j.Slf4j;
+          import org.springframework.stereotype.Service;
+
+          import java.util.UUID;
+
+
+          @Service
+          @Slf4j
+          @RequiredArgsConstructor
+          public class ProjectWorkSpaceService {
+
+              private final Project project;
+              private final ProjectDocument projectDocument;
+              private final UserRepo userRepo;
+
+              public User getUserById(UUID userId) {
+                  return userRepo.findById(userId)
+                          .orElseThrow(() -> new RuntimeException("User not found"));
+              }
+
+              // create workspace for project in general
+              public ProjectWorkSpaceCreationResponse createProjectWorkSpace(WorkSpaceCreationDto creationDto,
+                                                                             UUID projectId,
+                                                                             UUID userId) {
+                  return null;
+              }
+
+          }

@@ -11,5 +11,4 @@ public class NovaApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(NovaApplication.class, args);
 	}
-
 }

@@ -42,36 +42,31 @@ public class OncePerRequestFilterService {
         }
 
         @Override
+        protected boolean shouldNotFilter(HttpServletRequest request) {
+            String path = request.getRequestURI();
+            return path.startsWith("/login")
+                    || path.startsWith("/oauth2")      // ✅ removed trailing slash — catches /oauth2/authorization/google
+                    || path.startsWith("/error")
+                    || path.startsWith("/api/auth/")
+                    || path.startsWith("/api/oauth2/") // ✅ your OAuthController
+                    || path.startsWith("/api/v1/ai/")
+                    || path.startsWith("/api/v1/external/")
+                    || path.startsWith("/api/test/")
+                    || path.startsWith("/actuator/")
+                    || path.startsWith("/ws/")
+                    || path.startsWith("/ws-meeting/")
+                    || path.equals("/favicon.ico")                        // ✅ browser auto-request
+                    || path.startsWith("/.well-known/");
+        }
+        @Override
         protected void doFilterInternal(HttpServletRequest request,
                                         HttpServletResponse response,
                                         FilterChain filterChain) throws ServletException, IOException {
 
             String requestPath = request.getRequestURI();
+            log.debug("🔍 [JWT FILTER] {} {}", request.getMethod(), requestPath);
 
-            // Skip logging for /error to avoid noise
-            if (!requestPath.equals("/error")) {
-                log.debug("🔍 [JWT FILTER] {} {}", request.getMethod(), requestPath);
-            }
-
-            // Skip public endpoints
-            if (requestPath.startsWith("/api/v1/ai/") ||
-                    requestPath.startsWith("/api/v1/external/") ||
-                    requestPath.startsWith("/api/auth/register") ||
-                    requestPath.startsWith("/api/auth/login") ||
-                    requestPath.startsWith("/api/auth/login-mfa") ||
-                    requestPath.startsWith("/api/auth/verify-mfa") ||
-                    requestPath.startsWith("/api/auth/generate-mfa") ||
-                    requestPath.startsWith("/api/auth/view-mfa") ||
-                    requestPath.startsWith("/api/auth/mfa-code") ||
-                    requestPath.startsWith("/api/test/") ||
-                    requestPath.startsWith("/oauth2/") ||
-                    requestPath.equals("/error") ||
-                    requestPath.startsWith("/actuator/")) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            // Skip if already authenticated (prevents double-processing)
+            // Skip if already authenticated
             var existingAuth = SecurityContextHolder.getContext().getAuthentication();
             if (existingAuth != null &&
                     existingAuth.isAuthenticated() &&
@@ -107,12 +102,10 @@ public class OncePerRequestFilterService {
                 }
 
                 var userDetails = new UserPrincipal(user);
-
                 var authToken = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
 
                 SecurityContextHolder.getContext().setAuthentication(authToken);
-
                 log.debug("✅ [JWT FILTER] Authenticated: {}", email);
 
             } catch (Exception e) {
