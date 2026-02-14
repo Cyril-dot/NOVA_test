@@ -4,6 +4,7 @@ import com.novaTech.Nova.Entities.Enums.Priority;
 import com.novaTech.Nova.Entities.Enums.ProjectStatus;
 import com.novaTech.Nova.Entities.Enums.TaskStatus;
 import com.novaTech.Nova.Entities.Enums.TeamStatus;
+import com.novaTech.Nova.Entities.meeting.Meeting;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -1186,5 +1187,102 @@ public class EmailService {
                 "</div>";
 
         sendHtmlEmail(to, title, getStyledHtml(title, body));
+    }
+
+    public void sendMeetingCreatedEmail(String recipientEmail, Meeting meeting) {
+        String subject = "Meeting Created: " + meeting.getTitle();
+        String body = String.format("""
+                Hi,
+                
+                Your meeting has been created successfully!
+                
+                Meeting Details:
+                - Title: %s
+                - Meeting Code: %s
+                - Scheduled Time: %s
+                - Join Link: %s
+                
+                You can start the meeting anytime from your dashboard.
+                
+                Best regards,
+                Nova Team
+                """,
+                meeting.getTitle(),
+                meeting.getMeetingCode(),
+                meeting.getScheduledStartTime(),
+                "https://yourapp.com/meeting/" + meeting.getMeetingCode()
+        );
+
+        // Call your existing email sending method
+        // sendEmail(recipientEmail, subject, body);
+    }
+
+    public void sendMeetingSummaryEmail(String recipientEmail, Meeting meeting) {
+        String subject = "Meeting Summary: " + meeting.getTitle();
+
+        long durationMinutes = 0;
+        if (meeting.getActualStartTime() != null && meeting.getEndTime() != null) {
+            durationMinutes = java.time.Duration.between(
+                    meeting.getActualStartTime(),
+                    meeting.getEndTime()
+            ).toMinutes();
+        }
+
+        String body = String.format("""
+                Hi,
+                
+                Your meeting has ended.
+                
+                Meeting Summary:
+                - Title: %s
+                - Meeting Code: %s
+                - Duration: %d minutes
+                - Total Participants: %d
+                
+                Thank you for using Nova!
+                
+                Best regards,
+                Nova Team
+                """,
+                meeting.getTitle(),
+                meeting.getMeetingCode(),
+                durationMinutes,
+                meeting.getParticipants().size()
+        );
+
+        // Call your existing email sending method
+        // sendEmail(recipientEmail, subject, body);
+    }
+
+    public void sendMeetingInviteEmail(String recipientEmail, Meeting meeting, String invitedByName) {
+        String subject = "You're invited to: " + meeting.getTitle();
+        String body = String.format("""
+                Hi,
+                
+                %s has invited you to join a meeting.
+                
+                Meeting Details:
+                - Title: %s
+                - Description: %s
+                - Scheduled Time: %s
+                - Meeting Code: %s
+                
+                Join Link: %s
+                
+                See you there!
+                
+                Best regards,
+                Nova Team
+                """,
+                invitedByName,
+                meeting.getTitle(),
+                meeting.getDescription() != null ? meeting.getDescription() : "N/A",
+                meeting.getScheduledStartTime(),
+                meeting.getMeetingCode(),
+                "https://yourapp.com/meeting/" + meeting.getMeetingCode()
+        );
+
+        // Call your existing email sending method
+        // sendEmail(recipientEmail, subject, body);
     }
 }

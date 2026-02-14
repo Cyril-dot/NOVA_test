@@ -9,6 +9,7 @@ import com.novaTech.Nova.Security.MfaService;
 import com.novaTech.Nova.Security.TokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,6 +28,7 @@ import java.util.UUID;
 @Transactional
 @Service
 @RequiredArgsConstructor
+@CacheConfig(cacheNames = "users")
 public class UserRegistrationService {
 
     private final UserRepo userRepo;
@@ -34,9 +36,9 @@ public class UserRegistrationService {
     private final MfaService mfaService;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
-    // ========================
-// CREATE USER
-// ========================
+
+    // to cache user data
+    @CacheEvict(key = "all-active")
     public UserResponseDTO createUser(UserRegistrationDTO dto) throws IOException {
 
         if (userRepo.findByEmail(dto.getEmail()).isPresent()) {
@@ -140,6 +142,12 @@ public class UserRegistrationService {
     // ========================
     // UPDATE USER
     // ========================
+    @Caching(
+            evict = {
+                    @CacheEvict(key = "#userId"),
+                    @CacheEvict(key = "#userId + '_profileImage'")
+            }
+    )
     public UserResponseDTO updateUser(UUID userId, UpdateUserDTO dto) throws IOException {
         User user = getUserById(userId);
         if (user == null) throw new RuntimeException("User does not exist");
@@ -211,6 +219,7 @@ public class UserRegistrationService {
     // ========================
     // GET PROFILE IMAGE
     // ========================
+    @Cacheable(key = "#userId + '_profileImage'")
     @Transactional(readOnly = true)
     public byte[] getProfileImage(UUID userId) {
         User user = userRepo.findById(userId)
@@ -234,6 +243,7 @@ public class UserRegistrationService {
     // ========================
     // GET USER DETAILS
     // ========================
+    @Cacheable(key = "'email:' + #email")
     @Transactional(readOnly = true)
     public UserResponseDTO getAuthenticatedUser(String email) {
         User user = userRepo.findByUserEmail(email);
@@ -249,6 +259,7 @@ public class UserRegistrationService {
     // ========================
     // GET AUTHENTICATED USER PROFILE IMAGE
     // ========================
+    @Cacheable(key = "#email + '_profileImage'")
     @Transactional(readOnly = true)
     public byte[] getAuthenticatedUserProfileImage(String email) {
         User user = userRepo.findByUserEmail(email);
@@ -264,6 +275,7 @@ public class UserRegistrationService {
     // DELETE PROFILE IMAGE
     // ========================
     @Transactional
+    @CacheEvict(key = "#userId + '_ profileImage'" )
     public UserResponseDTO deleteProfileImage(UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -280,6 +292,7 @@ public class UserRegistrationService {
     // DELETE AUTHENTICATED USER PROFILE IMAGE
     // ========================
     @Transactional
+    @CacheEvict(key = "'email:' + #email + '_ profileImage'")
     public UserResponseDTO deleteAuthenticatedUserProfileImage(String email) {
         User user = userRepo.findByUserEmail(email);
         if (user == null) {

@@ -2,10 +2,13 @@ package com.novaTech.Nova.Security;
 
 import com.novaTech.Nova.Entities.User;
 import com.novaTech.Nova.Entities.repo.UserRepo;
+import com.novaTech.Nova.Security.RateLimitingConfigs.RateLimitFilter;
+import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -27,15 +30,17 @@ public class SecurityConfig {
     private final UserRepo userRepo;
     private final CustomOAuth2UserService customOAuth2UserService;
     private final OncePerRequestFilterService oncePerRequestFilterService;
+    private final RateLimitFilter rateLimitFilter;
 
     public SecurityConfig(TokenService tokenService,
                           UserRepo userRepo,
                           CustomOAuth2UserService customOAuth2UserService,
-                          OncePerRequestFilterService oncePerRequestFilterService) {
+                          OncePerRequestFilterService oncePerRequestFilterService, RateLimitFilter rateLimitFilter) {
         this.tokenService = tokenService;
         this.userRepo = userRepo;
         this.customOAuth2UserService = customOAuth2UserService;
         this.oncePerRequestFilterService = oncePerRequestFilterService;
+        this.rateLimitFilter = rateLimitFilter;
     }
 
     @Bean
@@ -69,17 +74,21 @@ public class SecurityConfig {
                                 "/api/test/**",
                                 "/api/v1/external/**",
                                 "/api/v1/ai/**",
+                                "/api/auth/refresh",
                                 "/error",
                                 "/error/**",
                                 "/actuator/**",
                                 "/ws-meeting/**",
                                 "/ws/**",
-                                "/api/meetings/**",
                                 "/favicon.ico",  // ✅ FIXED: removed /** wildcard
                                 "/assets/**",     // ✅ FIXED: also fixed typo "assests" → "assets"
                                 "/.well-known/**"
                         ).permitAll()
-
+                        .requestMatchers("/api/meetings/join/guest").permitAll()
+                        .requestMatchers("/api/meetings/validate/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/meetings/{meetingCode}").permitAll()
+                        // All other meeting endpoints require authentication
+                        .requestMatchers("/api/meetings/**").authenticated()
                         .requestMatchers("/api/v1/chat/**").authenticated()
                         .anyRequest().authenticated()
                 )
@@ -98,6 +107,7 @@ public class SecurityConfig {
                         })
                 )
 
+                .addFilterBefore((Filter) rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(
                         oncePerRequestFilterService.jwtAuthenticationFilter(),
                         UsernamePasswordAuthenticationFilter.class
@@ -139,15 +149,19 @@ public class SecurityConfig {
             User user = userRepo.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("User not found after OAuth2 login"));
 
-            String jwt = tokenService.generateAccessToken(user);
-            String refreshToken = tokenService.generateRefreshToken(user).getToken();
+            // ✅ Generate ENCRYPTED tokens
+            String encryptedAccessToken = tokenService.generateAccessToken(user);
+            String encryptedRefreshToken = tokenService.generateRefreshToken(user).getToken();
+
+            log.info("✅ [OAUTH2] User {} logged in successfully", user.getEmail());
 
             log.info("✅ [OAUTH2] User {} logged in successfully", user.getEmail());
 
             response.setStatus(HttpServletResponse.SC_OK);
             response.setContentType("application/json");
             response.getWriter().write(
-                    "{\"access_token\":\"" + jwt + "\", \"refresh_token\":\"" + refreshToken + "\"}"
+                    "{\"access_token\":\"" + encryptedAccessToken +
+                            "\", \"refresh_token\":\"" + encryptedRefreshToken + "\"}"
             );
             response.getWriter().flush();
         };

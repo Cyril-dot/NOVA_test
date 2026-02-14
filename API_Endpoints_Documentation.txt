@@ -1,6 +1,6 @@
 # Nova API Endpoints Documentation
 
-This document outlines all available API endpoints, their purpose, and how to test them using Postman. It also includes sample successful response bodies for frontend developers.
+This document outlines all available API endpoints, their purpose, and how to test them using Postman.
 
 **Base URL**: `http://localhost:8080`
 **Authentication**: Most endpoints require a `Bearer Token` in the `Authorization` header. Replace `<your_token>` with an actual JWT access token obtained from login.
@@ -61,8 +61,8 @@ This document outlines all available API endpoints, their purpose, and how to te
 - **Expected Response (200 OK)**:
   ```json
   {
-      "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc4OTA5MjAwfQ.signature_part_2",
-      "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc5NzA1NjAwfQ.signature_part_2",
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
       "message": "Login successful"
   }
   ```
@@ -101,8 +101,8 @@ This document outlines all available API endpoints, their purpose, and how to te
 - **Expected Response (200 OK)**:
   ```json
   {
-      "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc4OTA5MjAwfQ.signature_part_2",
-      "refreshToken": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huLmRvZUBleGFtcGxlLmNvbSIsImlhdCI6MTY3ODkwNTYwMCwiZXhwIjoxNjc5NzA1NjAwfQ.signature_part_2",
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
       "message": "Login successful"
   }
   ```
@@ -1747,7 +1747,7 @@ This document outlines all available API endpoints, their purpose, and how to te
 
 ### 8.1 Get User History
 - **Endpoint**: `GET /api/v1/history`
-- **Description**: Get all AI processing history for the authenticated user.
+- **Description**: Get all processing history for the authenticated user.
 - **Postman**:
   - **Method**: `GET`
   - **URL**: `{{base_url}}/api/v1/history`
@@ -1815,9 +1815,326 @@ This document outlines all available API endpoints, their purpose, and how to te
 
 ---
 
-## 9. Test (`/api/test`)
+## 9. Workspace (`/api/workspace`)
 
-### 9.1 Say Hello
+### 9.1 Create Workspace
+- **Endpoint**: `POST /api/workspace`
+- **Description**: Creates a new workspace document.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/workspace`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "title": "My HTML Project",
+        "description": "A simple landing page"
+    }
+    ```
+- **Expected Response (201 Created)**:
+  ```json
+  {
+      "id": 101,
+      "title": "My HTML Project",
+      "description": "A simple landing page",
+      "username": "johndoe",
+      "email": "john.doe@example.com",
+      "createdAt": "2024-10-31T19:00:00.123456",
+      "message": "Work Space created successfully"
+  }
+  ```
+
+### 9.2 Get Template
+- **Endpoint**: `POST /api/workspace/{docId}/template`
+- **Description**: Generates and saves a starter template for the specified document type.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/workspace/101/template?docType=HTML`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Params**: `docType=HTML` (or JS, CSS, JAVA, PYTHON, etc.)
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "id": 101,
+      "title": "My HTML Project",
+      "description": "A simple landing page",
+      "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>My Document</title>\n</head>\n<body>\n    <!-- CONTENT -->\n    <h1>Hello, World!</h1>\n</body>\n</html>\n",
+      "docType": "HTML"
+  }
+  ```
+
+### 9.3 View Document
+- **Endpoint**: `GET /api/workspace/{docId}`
+- **Description**: Retrieves the current content of a workspace document.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/workspace/101`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "title": "My HTML Project",
+      "description": "A simple landing page",
+      "content": "<!DOCTYPE html>\n<html lang=\"en\">\n..."
+  }
+  ```
+
+### 9.4 Update Document
+- **Endpoint**: `PUT /api/workspace/{docId}`
+- **Description**: Updates the content of a workspace document. For HTML, it injects content into the body if a partial snippet is sent.
+- **Postman**:
+  - **Method**: `PUT`
+  - **URL**: `{{base_url}}/api/workspace/101`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "content": "<h2>Welcome to my site</h2><p>This is updated content.</p>"
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "id": 101,
+      "title": "My HTML Project",
+      "description": "A simple landing page",
+      "content": "<!DOCTYPE html>\n<html lang=\"en\">\n...\n<body>\n    <h2>Welcome to my site</h2><p>This is updated content.</p>\n</body>\n</html>\n",
+      "docType": null
+  }
+  ```
+
+---
+
+## 10. Team Chat (`/api/teams/{teamId}/chat`)
+
+### 10.1 Send Message
+- **Endpoint**: `POST /api/teams/{teamId}/chat/messages`
+- **Description**: Send a message to the team chat.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/chat/messages`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "content": "Hello team!",
+        "mentionedUserIds": [],
+        "mentionTeam": false,
+        "mentionAdmins": false,
+        "replyToMessageId": null,
+        "fileUrl": null
+    }
+    ```
+- **Expected Response (200 OK)**:
+  ```json
+  {
+      "id": 1,
+      "content": "Hello team!",
+      "senderId": "...",
+      "teamId": "...",
+      "timestamp": "..."
+  }
+  ```
+
+### 10.2 Get Messages
+- **Endpoint**: `GET /api/teams/{teamId}/chat/messages`
+- **Description**: Get all messages for a team.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/chat/messages`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<TeamMessage>`
+
+### 10.3 Get Mentions
+- **Endpoint**: `GET /api/teams/{teamId}/chat/mentions`
+- **Description**: Get messages where the user is mentioned.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/chat/mentions`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<TeamMessage>`
+
+### 10.4 Get Thread
+- **Endpoint**: `GET /api/teams/{teamId}/chat/messages/{messageId}/thread`
+- **Description**: Get replies to a specific message.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/chat/messages/1/thread`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<TeamMessage>`
+
+### 10.5 Edit Message
+- **Endpoint**: `PATCH /api/teams/{teamId}/chat/messages/{messageId}`
+- **Description**: Edit a message.
+- **Postman**:
+  - **Method**: `PATCH`
+  - **URL**: `{{base_url}}/api/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/chat/messages/1`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (text)`: `Updated content`
+- **Expected Response (200 OK)**: `TeamMessage`
+
+### 10.6 Delete Message
+- **Endpoint**: `DELETE /api/teams/{teamId}/chat/messages/{messageId}`
+- **Description**: Delete a message.
+- **Postman**:
+  - **Method**: `DELETE`
+  - **URL**: `{{base_url}}/api/teams/tma1b2c3d4-e5f6-7890-1234-567890abcdef/chat/messages/1`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: (Empty)
+
+---
+
+## 11. Private Chat (`/api/chat`)
+
+### 11.1 Send Message (Identifier)
+- **Endpoint**: `POST /api/chat/messages/to/{usernameOrEmail}`
+- **Description**: Send a private message using username or email.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/chat/messages/to/janedoe`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "content": "Hi Jane!",
+        "replyToMessageId": null,
+        "fileUrl": null,
+        "fileType": null
+    }
+    ```
+- **Expected Response (200 OK)**: `PrivateMessage`
+
+### 11.2 Get Conversation (Identifier)
+- **Endpoint**: `GET /api/chat/conversations/with/{usernameOrEmail}`
+- **Description**: Get conversation history with a user.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/chat/conversations/with/janedoe`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<PrivateMessage>`
+
+### 11.3 Search Users
+- **Endpoint**: `GET /api/chat/users/search?q=searchTerm`
+- **Description**: Search for users to chat with.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/chat/users/search?q=jane`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<User>`
+
+### 11.4 Friend Management
+- **Send Request**: `POST /api/chat/friends/request/to/{usernameOrEmail}`
+- **Remove Friend**: `DELETE /api/chat/friends/{usernameOrEmail}`
+- **Check Friendship**: `GET /api/chat/friends/check/{usernameOrEmail}`
+- **Get Friends**: `GET /api/chat/friends/details`
+- **Pending Requests**: `GET /api/chat/friends/pending/details`
+- **Sent Requests**: `GET /api/chat/friends/sent/details`
+- **Accept Request**: `PUT /api/chat/friends/{friendshipId}/accept`
+- **Reject Request**: `PUT /api/chat/friends/{friendshipId}/reject`
+
+---
+
+## 12. Team Based Projects (`/api/v1/team`)
+
+### 12.1 Create Team Project
+- **Endpoint**: `POST /api/v1/team/{teamId}/projects`
+- **Description**: Create a project linked to a team.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/v1/team/tma1b2c3d4-e5f6-7890-1234-567890abcdef/projects`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data` (title, description, startDate, endDate, status, documents)
+- **Expected Response (201 Created)**: `TeamProjectResponse`
+
+### 12.2 Update Team Project
+- **Endpoint**: `PUT /api/v1/team/{teamId}/projects/{projectId}`
+- **Description**: Update a team project.
+- **Postman**:
+  - **Method**: `PUT`
+  - **URL**: `{{base_url}}/api/v1/team/tma1b2c3d4-e5f6-7890-1234-567890abcdef/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `form-data` (fields to update)
+- **Expected Response (200 OK)**: `TeamProjectResponse`
+
+### 12.3 Get Team Project
+- **Endpoint**: `GET /api/v1/team/{teamId}/projects/{projectId}`
+- **Description**: Get details of a team project.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/v1/team/tma1b2c3d4-e5f6-7890-1234-567890abcdef/projects/prja1b2c3d4-e5f6-7890-1234-567890abcdef`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `TeamProjectResponse`
+
+### 12.4 Get All Team Projects
+- **Endpoint**: `GET /api/v1/team/projects`
+- **Description**: Get all team projects for the user.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/v1/team/projects`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<TeamProjectResponse>`
+
+### 12.5 Team Project Summary
+- **Endpoint**: `GET /api/v1/team/{teamId}/projects/summary`
+- **Description**: Get summary of projects in a team.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/v1/team/tma1b2c3d4-e5f6-7890-1234-567890abcdef/projects/summary`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<TeamProjectSummaryDto>`
+
+### 12.6 Team Project Counts
+- **Total Count**: `GET /api/v1/team/{teamId}/projects/count`
+- **Count by Status**: `GET /api/v1/team/{teamId}/projects/count/status/{status}`
+- **Overdue Projects**: `GET /api/v1/team/{teamId}/projects/overdue`
+
+### 12.7 Team Project Documents
+- **Upload**: `POST /api/v1/team/{teamId}/projects/{projectId}/documents`
+- **Get All**: `GET /api/v1/team/{teamId}/projects/{projectId}/documents`
+- **Get User Docs**: `GET /api/v1/team/documents`
+- **Delete**: `DELETE /api/v1/team/{teamId}/projects/{projectId}/documents/{documentId}`
+
+### 12.8 Team Project Tasks
+- **Create**: `POST /api/v1/team/{teamId}/projects/{projectId}/tasks`
+- **Update**: `PUT /api/v1/team/{teamId}/tasks/{taskId}`
+- **Delete**: `DELETE /api/v1/team/{teamId}/tasks/{taskId}`
+- **Get Project Tasks**: `GET /api/v1/team/{teamId}/projects/{projectId}/tasks`
+- **Get My Tasks**: `GET /api/v1/team/{teamId}/tasks/my-tasks`
+- **Get Overdue Tasks**: `GET /api/v1/team/{teamId}/tasks/overdue`
+
+### 12.9 Team Reminders
+- **Create**: `POST /api/v1/team/{teamId}/reminders`
+- **Update**: `PUT /api/v1/team/{teamId}/reminders/{reminderId}`
+- **Delete**: `DELETE /api/v1/team/{teamId}/reminders/{reminderId}`
+- **Get User Reminders**: `GET /api/v1/team/{teamId}/reminders`
+- **Get Project Reminders**: `GET /api/v1/team/{teamId}/projects/{projectId}/reminders`
+- **Get Task Reminders**: `GET /api/v1/team/{teamId}/tasks/{taskId}/reminders`
+
+### 12.10 Team Messaging (Updates)
+- **Send Team Message**: `POST /api/v1/team/{teamId}/messages/send`
+- **Send Project Update**: `POST /api/v1/team/{teamId}/projects/{projectId}/send-update`
+
+---
+
+## 13. Rate Limiting (Admin) (`/api/admin/rate-limit`)
+
+- **Get Stats**: `GET /api/admin/rate-limit/stats`
+- **Clear Cache**: `DELETE /api/admin/rate-limit/cache`
+- **Remove Key**: `DELETE /api/admin/rate-limit/cache/{key}`
+- **Get Tokens**: `GET /api/admin/rate-limit/tokens/{key}`
+
+---
+
+## 14. Static Resources
+
+- **Favicon**: `GET /favicon.ico`
+- **Chrome DevTools**: `GET /.well-known/appspecific/com.chrome.devtools.json`
+
+---
+
+## 15. Test (`/api/test`)
+
+### 15.1 Say Hello
 - **Endpoint**: `GET /api/test/hello`
 - **Description**: Returns a simple plain text message.
 - **Postman**:
@@ -1828,7 +2145,7 @@ This document outlines all available API endpoints, their purpose, and how to te
   Hello from Test Controller!
   ```
 
-### 9.2 Get Simple Message
+### 15.2 Get Simple Message
 - **Endpoint**: `GET /api/test/message`
 - **Description**: Returns a simple JSON message.
 - **Postman**:

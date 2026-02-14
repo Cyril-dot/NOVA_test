@@ -8,10 +8,14 @@ import com.novaTech.Nova.Entities.User;
 import com.novaTech.Nova.Entities.repo.ProjectRepo;
 import com.novaTech.Nova.Entities.repo.TaskRepo;
 import com.novaTech.Nova.Entities.repo.UserRepo;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -24,6 +28,7 @@ import java.util.stream.Collectors;
 @Transactional
 @Slf4j
 @RequiredArgsConstructor
+@CacheConfig(cacheNames = "userTasks")
 public class TaskService {
 
     private final ProjectRepo projectRepo;
@@ -32,6 +37,14 @@ public class TaskService {
     private final EmailService emailService;
 
     // to create a task for a user
+    @Transactional
+    @Caching(
+            evict = {
+                    @CacheEvict(key = "'user:' + #userId + '_tasks'"),
+                    @CacheEvict(key = "'user:' + #userId + '_taskCount'"),
+                    @CacheEvict(key = "'user:' + #userId + '_completedTaskCount'")
+            }
+    )
     public TaskResponseDTO createUserTask(UUID userId, TaskCreationDTO dto){
         log.info("Creating task for user with ID: {}", userId);
         // to check for the user
@@ -85,6 +98,15 @@ public class TaskService {
 
 
     //now to create task for project
+    @Transactional
+    @Caching(
+            evict = {
+                    @CacheEvict(key = "'project:' + #projectId + '_tasks'"),
+                    @CacheEvict(key = "'project:' + #projectId + '_taskCount'"),
+                    @CacheEvict(key = "'project:' + #projectId + '_completedTaskCount'"),
+                    @CacheEvict(key = "'user:' + #userId + '_userProjectTasks'")
+            }
+    )
     public TaskResponseForProjectDto createProjectTask(UUID projectId, UUID userId, TaskCreationDTO dto){
         log.info("Creating task for project with ID: {} by user with ID: {}", projectId, userId);
         // to check for user
@@ -149,6 +171,7 @@ public class TaskService {
     }
 
     //to view all tasks for user
+    @Cacheable(key = "'user:' + #userId + '_tasks'")
     public List<TaskResponseDTO> viewAllUserTasks(UUID userId){
         log.info("Fetching all tasks for user with ID: {}", userId);
         List<Task> tasks = taskRepo.findByUserId(userId);
@@ -178,6 +201,7 @@ public class TaskService {
     }
 
     // to get task by id for user
+    @Cacheable(key = "'user:' + #userId + '_task:' + #taskId")
     public TaskResponseDTO viewTaskByIdForUser(UUID taskId, UUID userId){
         log.info("Fetching task with ID: {} for user with ID: {}", taskId, userId);
         Task task = taskRepo.findByIdAndUserId(taskId, userId);
@@ -202,6 +226,7 @@ public class TaskService {
     }
 
     // to view task by status
+    @Cacheable(key = "'user:' + #userId + '_tasksByStatus:' + #status")
     public List<TaskResponseDTO> viewTasksByStatus(UUID userId, TaskStatus status){
         log.info("Fetching tasks for user with ID: {} with status: {}", userId, status);
         List<Task> tasks = taskRepo.findByUser_IdAndStatus(userId, status);
@@ -230,6 +255,7 @@ public class TaskService {
 
 
     // now for projects
+    @Cacheable(key = "'project:' + #projectId + '_tasks'")
     public List<TaskResponseForProjectDto> viewAllProjectTasks(UUID projectId, UUID useId){
         log.info("Fetching all tasks for project with ID: {} by user with ID: {}", projectId, useId);
         // to see if user exists
@@ -273,6 +299,7 @@ public class TaskService {
 
 
     // to get task by id for project
+    @Cacheable(key = "'project:' + #projectId + '_task:' + #taskId")
     public TaskResponseForProjectDto viewTaskByIdForProject(UUID taskId, UUID projectId, UUID useId){
         log.info("Fetching task with ID: {} for project with ID: {} by user with ID: {}", taskId, projectId, useId);
 
@@ -313,6 +340,7 @@ public class TaskService {
     }
 
     //now by status
+    @Cacheable(key = "'project:' + #projectId + '_tasksByStatus:' + #status")
     public List<TaskResponseForProjectDto> viewTasksByStatusForProject(UUID projectId, UUID useId, TaskStatus status){
         log.info("Fetching tasks for project with ID: {} with status: {} by user with ID: {}", projectId, status, useId);
         // to see if user exists
@@ -356,6 +384,7 @@ public class TaskService {
 
 
     // to search for task for user
+    @Cacheable(key = "'user:' + #userId + '_tasksByKeyword:' + #keyword")
     public List<TaskResponseDTO> searchUserTasks(UUID userId, String keyword){
         log.info("Searching tasks for user with ID: {} with keyword: {}", userId, keyword);
         List<Task> tasks = taskRepo.searchByUser(userId, keyword);
@@ -384,6 +413,7 @@ public class TaskService {
     }
 
     // now for project task general task
+    @Cacheable(key = "'project:' + #projectId + '_tasksByKeyword:' + #keyword")
     public List<TaskResponseForProjectDto> searchProjectTasks(UUID projectId, String keyword, UUID userId){
         log.info("Searching tasks for project with ID: {} with keyword: {} by user with ID: {}", projectId, keyword, userId);
         User user = userRepo.findById(userId)
@@ -423,6 +453,11 @@ public class TaskService {
         return taskResponses;
     }
 
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #userId + '_tasks'"),
+            @CacheEvict(key = "'user:' + #userId + '_taskCount'"),
+            @CacheEvict(key = "'user:' + #userId + '_completedTaskCount'")
+    })
     public TaskResponseDTO updateUserTask(UUID taskId, UUID userId, TaskUpdateDTO dto) {
         log.info("Updating task with ID: {} for user with ID: {}", taskId, userId);
         Task task = taskRepo.findById(taskId)
@@ -466,6 +501,11 @@ public class TaskService {
                 .build();
     }
 
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #userId + '_tasks'"),
+            @CacheEvict(key = "'user:' + #userId + '_taskCount'"),
+            @CacheEvict(key = "'user:' + #userId + '_completedTaskCount'")
+    })
     public void deleteUserTask(UUID taskId, UUID userId) {
         log.info("Deleting task with ID: {} for user with ID: {}", taskId, userId);
         Task task = taskRepo.findById(taskId)
@@ -526,6 +566,12 @@ public class TaskService {
                 .build();
     }
 
+    @Caching(evict = {
+            @CacheEvict(key = "'project:' + #projectId + '_tasks'"),
+            @CacheEvict(key = "'project:' + #projectId + '_taskCount'"),
+            @CacheEvict(key = "'project:' + #projectId + '_completedTaskCount'"),
+            @CacheEvict(key = "'user:' + #userId + '_userProjectTasks'")
+    })
     public void deleteProjectTask(UUID taskId, UUID projectId, UUID userId) {
         log.info("Deleting task with ID: {} for project with ID: {} by user with ID: {}", taskId, projectId, userId);
         Task task = taskRepo.findById(taskId)
@@ -547,6 +593,8 @@ public class TaskService {
     // NEW METHODS FOR SUMMARY AND STATS
     // ========================
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_taskSummary'")
     public List<TaskSummaryDTO> viewAllTasksSummary(UUID userId) {
         log.info("Fetching task summaries for user ID: {}", userId);
         List<Task> tasks = taskRepo.findByUserId(userId);
@@ -568,18 +616,26 @@ public class TaskService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_taskCount'")
     public long getTaskCount(UUID userId) {
         return taskRepo.countByUserId(userId);
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_completedTaskCount'")
     public long getCompletedTaskCount(UUID userId) {
         return taskRepo.countByUserIdAndStatus(userId, TaskStatus.DONE);
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_inProgressTaskCount'")
     public long getInProgressTaskCount(UUID userId) {
         return taskRepo.countByUserIdAndStatus(userId, TaskStatus.IN_PROGRESS);
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_overdueTaskCount'")
     public List<TaskSummaryDTO> viewOverdueTasks(UUID userId) {
         log.info("Fetching overdue tasks for user ID: {}", userId);
         List<Task> tasks = taskRepo.findByUserId(userId);

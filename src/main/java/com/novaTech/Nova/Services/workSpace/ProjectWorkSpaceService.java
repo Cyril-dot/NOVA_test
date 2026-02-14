@@ -570,7 +570,7 @@ public class ProjectWorkSpaceService {
 
 
     // to download a single workspace docs
-    public ResponseEntity<byte[]> downloadWorkSpaceDoc(WorkSpaceDocs document, UUID userId, UUID projectId){
+    public ResponseEntity<byte[]> downloadWorkSpaceDoc(Long docId, UUID userId, UUID projectId){
         User user = getUserById(userId);
         if (user == null){
             log.error("User with id {} not found", userId);
@@ -587,6 +587,14 @@ public class ProjectWorkSpaceService {
         if (!project.getUser().getId().equals(userId)){
             log.error("Unauthorized project acccess, project with id {} does not belong to user", userId);
             throw new UnauthorizedException("Unauthorized project access, project with id {} does not belong to user");
+        }
+
+        WorkSpaceDocs document = workSpaceRepo.findById(docId)
+                .orElseThrow(() -> new RuntimeException("Workspace with id " + docId + " not found"));
+
+        if (!document.getUser().getId().equals(user.getId()) && !document.getProject().getId().equals(project.getId())){
+            log.error("User with id {} does not belong to the user", document.getUser().getId());
+            throw new UnauthorizedException("Authorized access, this resource does not belong to user with id {}");
         }
 
         String mimeType = document.getDocType().getMimeType();

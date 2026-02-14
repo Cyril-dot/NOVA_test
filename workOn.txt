@@ -68,40 +68,28 @@ workspace
           }
 
 
-          package com.novaTech.Nova.Services.workSpace;
+package com.novaTech.Nova.Security.RateLimitingConfigs;
 
-          import com.novaTech.Nova.DTO.ProjectWorkSpaceCreationResponse;
-          import com.novaTech.Nova.DTO.WorkSpaceCreationDto;
-          import com.novaTech.Nova.Entities.Project;
-          import com.novaTech.Nova.Entities.ProjectDocument;
-          import com.novaTech.Nova.Entities.User;
-          import com.novaTech.Nova.Entities.repo.UserRepo;
-          import lombok.RequiredArgsConstructor;
-          import lombok.extern.slf4j.Slf4j;
-          import org.springframework.stereotype.Service;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-          import java.util.UUID;
+@Configuration
+@RequiredArgsConstructor
+public class RateConfig {
 
+    private final RateLimitingService rateLimitingService;
+    private final RateLimitingProperties rateLimitingProperties;
+    private final ObjectMapper objectMapper;
 
-          @Service
-          @Slf4j
-          @RequiredArgsConstructor
-          public class ProjectWorkSpaceService {
+    @Bean
+    public RateLimitFilter rateLimitFilter() {
+        return new RateLimitFilter(
+                rateLimitingService,
+                rateLimitingProperties,
+                objectMapper
+        );
+    }
+}
 
-              private final Project project;
-              private final ProjectDocument projectDocument;
-              private final UserRepo userRepo;
-
-              public User getUserById(UUID userId) {
-                  return userRepo.findById(userId)
-                          .orElseThrow(() -> new RuntimeException("User not found"));
-              }
-
-              // create workspace for project in general
-              public ProjectWorkSpaceCreationResponse createProjectWorkSpace(WorkSpaceCreationDto creationDto,
-                                                                             UUID projectId,
-                                                                             UUID userId) {
-                  return null;
-              }
-
-          }

@@ -1,74 +1,143 @@
 package com.novaTech.Nova.Entities.meeting;
 
 import com.novaTech.Nova.Entities.Enums.MeetingStatus;
+import com.novaTech.Nova.Entities.User;
 import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
-/**
- * OPTIONAL: Enhanced Meeting entity with dedicated callId field
- *
- * This is recommended over storing callId in the description field.
- *
- * If you use this version, you'll need to create a migration to add the call_id column:
- *
- * ALTER TABLE meetings ADD COLUMN call_id VARCHAR(50);
- * UPDATE meetings SET call_id = description WHERE description LIKE 'call-%';
- */
 @Entity
 @Table(name = "meetings")
-@Getter
-@Setter
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Meeting {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
-    @Column(name = "meeting_link", nullable = false, length = 500)
-    private String meetingLink;
+    @Column(nullable = false, unique = true)
+    private String meetingCode;
 
-    @Column(name = "call_id", length = 50) // NEW FIELD: Store GetStream call ID
-    private String callId;
-
-    @Column(name = "host_id", nullable = false)
-    private UUID hostId;
-
-    @Column(name = "title", nullable = false)
+    @Column(nullable = false)
     private String title;
 
-    @Column(name = "description", columnDefinition = "TEXT")
+    @Column(length = 1000)
     private String description;
 
-    @Column(name = "waiting_room_enabled", nullable = false)
-    private Boolean waitingRoomEnabled;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "host_id", nullable = false)
+    private User host;
 
-    @Column(name = "recording_enabled", nullable = false)
-    private Boolean recordingEnabled;
+    @Column(nullable = false)
+    private LocalDateTime scheduledStartTime;
 
-    @Column(name = "team_id")
-    private UUID teamId;
+    @Column
+    private LocalDateTime actualStartTime;
 
-    @Column(name = "project_id") // Keep existing field
-    private UUID projectId;
-
-    @Column(name = "started_at")
-    private LocalDateTime startedAt;
-
-    @Column(name = "ended_at")
-    private LocalDateTime endedAt;
+    @Column
+    private LocalDateTime endTime;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
+    @Column(nullable = false)
     private MeetingStatus status;
 
-    @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Integer maxParticipants = 50;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean isPublic = false;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean requiresPassword = false;
+
+    @Column
+    private String password;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean allowGuests = true;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean recordingEnabled = false;
+
+    @Column
+    private String recordingUrl;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean videoEnabled = true;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean audioEnabled = true;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean screenShareEnabled = true;
+
+    @Column(nullable = false)
+    @Builder.Default  // ← ADD THIS
+    private Boolean chatEnabled = true;
+
+    // Participants tracking
+    @OneToMany(mappedBy = "meeting", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default  // ← ADD THIS - MOST IMPORTANT!
+    private Set<MeetingParticipant> participants = new HashSet<>();
+
+    // Timestamps
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    @Column
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = LocalDateTime.now();
+        updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+
+    // Helper methods remain the same
+    public void addParticipant(MeetingParticipant participant) {
+        participants.add(participant);
+        participant.setMeeting(this);
+    }
+
+    public void removeParticipant(MeetingParticipant participant) {
+        participants.remove(participant);
+        participant.setMeeting(null);
+    }
+
+    public int getCurrentParticipantCount() {
+        return (int) participants.stream()
+                .filter(p -> p.getLeftAt() == null)
+                .count();
+    }
+
+    public boolean isFull() {
+        return getCurrentParticipantCount() >= maxParticipants;
+    }
+
+    public boolean isActive() {
+        return status == MeetingStatus.ACTIVE;
+    }
 }

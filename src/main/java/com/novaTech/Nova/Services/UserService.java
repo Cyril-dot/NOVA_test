@@ -12,6 +12,10 @@ import com.novaTech.Nova.Entities.repo.UserRepo;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +27,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 @Transactional
+@CacheConfig(cacheNames = {"users", "teams"})
 public class UserService {
     private final UserRepo userRepo;
     private final TeamRepository teamRepository;
@@ -30,6 +35,11 @@ public class UserService {
     private final EmailService emailService;
 
     // to search for users , that is active users by thier username
+    @Transactional(readOnly = true)
+    @Cacheable(
+            key = "#userId + '_search_' + #request.username",
+            unless = "#result == null"
+    )
     public List<SearchUserResponse> searchUser(SearchUserRequest request, UUID userId) {
 
         // Validate the requesting user exists
@@ -64,6 +74,11 @@ public class UserService {
     }
 
     // to create a team
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "teams", key = "'user:' + #userId + '_teams'"),
+            @CacheEvict(cacheNames = "users", allEntries = true)  // Clear user search cache
+    })
     public TeamResponse createTeam(CreateTeamRequest request, UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> {
@@ -144,6 +159,11 @@ public class UserService {
 
     // add team members
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'team:' + #teamId"),
+            @CacheEvict(key = "'team:' + #teamId + '_members'"),
+            @CacheEvict(cacheNames = "users", allEntries = true)
+    })
     public TeamResponse addMember(UUID teamId, AddTeamRequest request, UUID userId) {
         log.info("Request to add member to team {} by user {}", teamId, userId);
 
@@ -222,6 +242,7 @@ public class UserService {
     }
 
     // to view team members
+    @Cacheable(key = "'team:' + #teamId + '_members'")
     public TeamResponse viewTeamMembers(UUID teamId, UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
@@ -242,6 +263,7 @@ public class UserService {
     }
 
     // number of teams joined by a user
+    @Cacheable(key = "'user:' + #userId + '_teamCount'")
     public int numberOfTeamsJoined(UUID userId){
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
@@ -254,6 +276,14 @@ public class UserService {
     }
 
     // to delete team
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'team:' + #teamId"),
+            @CacheEvict(key = "'team:' + #teamId + '_members'"),
+            @CacheEvict(cacheNames = "users", allEntries = true),
+            @CacheEvict(key = "'user:' + #userId + '_teams'"),
+            @CacheEvict(key = "'user:' + #userId + '_teamCount'")
+    })
     public void deleteTeam(UUID teamId, UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
@@ -283,6 +313,13 @@ public class UserService {
     }
 
     // to remove team members
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'team:' + #teamId"),
+            @CacheEvict(key = "'team:' + #teamId + '_members'"),
+            @CacheEvict(key = "'user:' + #memberId + '_teams'"),
+            @CacheEvict(key = "'user:' + #memberId + '_teamCount'")
+    })
     public TeamResponse removeMember(UUID teamId, UUID memberId, UUID userId) {
         User requester = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("Requester not found"));
@@ -327,6 +364,11 @@ public class UserService {
     }
 
     // to update team member status/role
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'team:' + #teamId"),
+            @CacheEvict(key = "'team:' + #teamId + '_members'")
+    })
     public TeamResponse updateMemberRole(UUID teamId, UUID memberId, TeamStatus newRole, UUID userId) {
         User requester = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("Requester not found"));
@@ -382,6 +424,7 @@ public class UserService {
     }
 
     // to view all teams joined by thier user name and description and number of members avaliable as well as ur teamstatus
+    @Cacheable(key = "'user:' + #userId + '_teams'")
     public List<TeamSummaryResponse> viewJoinedTeams(UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
@@ -404,6 +447,8 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
+
+    @Cacheable(key = "'team:' + #teamId + '_membersWithRole'")
     public List<TeamMemberResponse> viewTeamMembersWithRole(UUID teamId, UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));

@@ -509,13 +509,19 @@ public class UserWorkSpace {
 
 
     // here to download a single workspace docs
-    public ResponseEntity<byte[]> downloadFile(WorkSpaceDocs document, UUID userId) {
+    public ResponseEntity<byte[]> downloadFile(Long docId, UUID userId) {
         User user = getUserById(userId);
         if (user == null){
             log.error("User with id {} not found", userId);
             throw new UsernameNotFoundException("User not found, id doesnt exist");
         }
 
+        WorkSpaceDocs document = workSpaceRepo.findById(docId)
+                .orElseThrow(() -> new NoSuchElementException("Workspace with id " + docId + " not found"));
+        if (document.getUser().getId() != user.getId()){
+            log.info("User with id {} does not belong to the user", document.getUser().getId());
+            throw new UnauthorizedException("Authorized access, this resource does not belong to user with id {}");
+        }
         String mimeType = document.getDocType().getMimeType();
         String extension = document.getDocType().getExtension();
         String fileName = document.getTitle() + extension;

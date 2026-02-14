@@ -3,7 +3,6 @@ package com.novaTech.Nova.Entities.repo;
 import com.novaTech.Nova.Entities.meeting.MeetingParticipant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -11,19 +10,20 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface MeetingParticipantRepository extends JpaRepository<MeetingParticipant, Long> {
+public interface MeetingParticipantRepository extends JpaRepository<MeetingParticipant, UUID> {
     
-    List<MeetingParticipant> findByMeetingId(Long meetingId);
+    List<MeetingParticipant> findByMeetingId(UUID meetingId);
     
-    Optional<MeetingParticipant> findByMeetingIdAndUserId(Long meetingId, UUID userId);
+    @Query("SELECT p FROM MeetingParticipant p WHERE p.meeting.id = :meetingId AND p.leftAt IS NULL")
+    List<MeetingParticipant> findActiveParticipants(UUID meetingId);
     
-    @Query("SELECT p FROM MeetingParticipant p WHERE " +
-           "p.meetingId = :meetingId AND p.leftAt IS NULL")
-    List<MeetingParticipant> findActiveParticipants(@Param("meetingId") Long meetingId);
+    Optional<MeetingParticipant> findBySessionId(String sessionId);
     
-    List<MeetingParticipant> findByMeetingIdAndIsInWaitingRoomTrue(Long meetingId);
+    Optional<MeetingParticipant> findByPeerId(String peerId);
     
-    @Query("SELECT p FROM MeetingParticipant p WHERE " +
-           "p.meetingId = :meetingId AND p.isHandRaised = true AND p.leftAt IS NULL")
-    List<MeetingParticipant> findRaisedHands(@Param("meetingId") Long meetingId);
+    @Query("SELECT p FROM MeetingParticipant p WHERE p.meeting.id = :meetingId AND p.user.id = :userId AND p.leftAt IS NULL")
+    Optional<MeetingParticipant> findActiveUserParticipant(UUID meetingId, UUID userId);
+    
+    @Query("SELECT p FROM MeetingParticipant p WHERE p.meeting.meetingCode = :meetingCode AND p.isOnline = true")
+    List<MeetingParticipant> findOnlineParticipantsByMeetingCode(String meetingCode);
 }

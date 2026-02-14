@@ -13,6 +13,10 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +32,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@Transactional
+@CacheConfig(cacheNames = "projects")
 public class ProjectService {
 
     private final ProjectRepo projectRepo;
@@ -55,6 +61,9 @@ public class ProjectService {
     // CREATE PROJECT
     // ========================
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'")
+    })
     public ProjectResponseDTO createProject(UUID ownerId, ProjectCreateDTO dto) throws IOException {
         log.info("Creating project for user ID: {}", ownerId);
 
@@ -98,6 +107,12 @@ public class ProjectService {
     // UPDATE PROJECT
     // ========================
     @Transactional
+    @Caching(
+            evict = {
+                    @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'"),
+                    @CacheEvict(key = "'project:' + #projectId + '_projectDocuments'")
+            }
+    )
     public ProjectResponseDTO updateProject(UUID projectId, UUID ownerId, ProjectUpdateDTO dto) throws IOException {
         log.info("Updating project ID: {} for user ID: {}", projectId, ownerId);
 
@@ -158,6 +173,7 @@ public class ProjectService {
     // GET PROJECT BY ID
     // ========================
     @Transactional(readOnly = true)
+    @Cacheable(key = "'project:' + #projectId + '_projectDetails' + #includeDocuments + 'user:' + #ownerId + '_userProjects'")
     public ProjectResponseDTO getProjectById(UUID projectId, UUID ownerId, boolean includeDocuments) {
         log.info("Fetching project ID: {} for user ID: {}", projectId, ownerId);
 
@@ -173,6 +189,11 @@ public class ProjectService {
     // ========================
     // GET ALL PROJECTS FOR USER
     // ========================
+    @Caching(cacheable = {
+            @Cacheable(key = "'owner:' + #ownerId + '_userProjects'"),
+            @Cacheable(key = "'user:' + #ownerId + '_projects'"),
+            @Cacheable(key = "'includeDocuments:' + #includeDocuments + '_user:' + #ownerId + '_projects'")
+    })
     @Transactional(readOnly = true)
     public List<ProjectResponseDTO> getAllProjects(UUID ownerId, ProjectStatus status, boolean includeDocuments) {
         log.info("Fetching all projects for user ID: {}, status: {}", ownerId, status);
@@ -193,6 +214,8 @@ public class ProjectService {
     }
 
     // get all documents
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_documents'")
     public List<ProjectResponseDTO> getAllDocumentsForUser(UUID userId) {
         log.info("Fetching all projects for user ID: {}", userId);
         User owner = userRepo.findById(userId)
@@ -214,6 +237,8 @@ public class ProjectService {
 
 
     // view most recent projects
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_projects'")
     public List<ProjectResponseDTO> getOrderedProjects(UUID userId) {
         log.info("Fetching all projects for user ID: {}", userId);
         User owner = userRepo.findById(userId)
@@ -235,6 +260,10 @@ public class ProjectService {
     // DELETE PROJECT
     // ========================
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'"),
+            @CacheEvict(key = "'project:' + #projectId + '_projectDocuments'")
+    })
     public void deleteProject(UUID projectId, UUID ownerId) {
         log.info("Deleting project ID: {} for user ID: {}", projectId, ownerId);
 
@@ -292,6 +321,7 @@ public class ProjectService {
     // GET ALL DOCUMENTS FOR PROJECT
     // ========================
     @Transactional(readOnly = true)
+    @Cacheable(key = "'project:' + #projectId + '_projectDocuments'")
     public List<ProjectDocumentResponseDTO> getProjectDocuments(UUID projectId, UUID userId, DocumentType type) {
         log.info("Fetching documents for project ID: {}, type: {}", projectId, type);
 
@@ -322,6 +352,10 @@ public class ProjectService {
     // DELETE DOCUMENT
     // ========================
     @Transactional
+    @Caching(evict ={
+            @CacheEvict(key = "'project:' + #documentId + '_projectDocuments'"),
+            @CacheEvict(key = "'user:' + #userId + '_documents'")
+    })
     public void deleteDocument(UUID documentId, UUID userId) {
         log.info("Deleting document ID: {} for user ID: {}", documentId, userId);
 
@@ -464,6 +498,8 @@ public class ProjectService {
 
 
     // saerch for project
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_projects'")
     public List<ProjectResponseDTO> searchForProject(UUID userId, String keyword){
         log.info("Searching projects for user ID: {} with keyword: {}", userId, keyword);
         User user = userRepo.findById(userId)
@@ -520,6 +556,8 @@ public class ProjectService {
     // NEW METHODS FOR SUMMARY AND STATS
     // ========================
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_projects'")
     public List<ProjectSummaryDTO> viewAllProjectsSummary(UUID userId) {
         log.info("Fetching project summaries for user ID: {}", userId);
         User user = userRepo.findById(userId)
@@ -544,24 +582,32 @@ public class ProjectService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_projectCount'")
     public long getProjectCount(UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return projectRepo.countByUser(user);
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_completedProjectCount'")
     public long getCompletedProjectCount(UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return projectRepo.countByUserAndStatus(user, ProjectStatus.COMPLETED);
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_inProgressProjectCount'")
     public long getInProgressProjectCount(UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         return projectRepo.countByUserAndStatus(user, ProjectStatus.ACTIVE);
     }
 
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_overdueProjectCount'")
     public List<ProjectSummaryDTO> viewOverdueProjects(UUID userId) {
         log.info("Fetching overdue projects for user ID: {}", userId);
         User user = userRepo.findById(userId)

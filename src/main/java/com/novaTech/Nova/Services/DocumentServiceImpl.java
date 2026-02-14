@@ -6,6 +6,10 @@ import com.novaTech.Nova.Entities.User;
 import com.novaTech.Nova.Entities.repo.DocumentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,6 +20,7 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@CacheConfig(cacheNames = "documents")
 public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentRepository documentRepository;
@@ -24,6 +29,11 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #user.id + '_documents'"),
+            @CacheEvict(key = "'user:' + #user.id + '_documentCount'"),
+            @CacheEvict(key = "'user:' + #user.id + '_status:' + 'COMPLETED' + '_documents'")
+    })
     public DocumentUploadResponse uploadDocument(MultipartFile file, User user) throws Exception {
         log.info("Uploading document: {} for user: {}", file.getOriginalFilename(), user.getUsername());
 
@@ -92,6 +102,8 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'doc:' + #id + '_user:' + #user.id")
     public Document getDocumentById(Long id, User user) throws Exception {
         log.debug("Fetching document with ID: {} for user: {}", id, user.getUsername());
         return documentRepository.findByIdAndUser(id, user)
@@ -102,6 +114,8 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #user.id + '_documents'")
     public List<Document> getUserDocuments(User user) {
         log.debug("Fetching all documents for user: {}", user.getUsername());
         List<Document> documents = documentRepository.findByUserOrderByUploadedAtDesc(user);
@@ -111,6 +125,12 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'doc:' + #id + '_user:' + #user.id"),
+            @CacheEvict(key = "'user:' + #user.id + '_documents'"),
+            @CacheEvict(key = "'user:' + #user.id + '_documentCount'"),
+            @CacheEvict(key = "'user:' + #user.id + '_status:*'", allEntries = true, beforeInvocation = true)
+    })
     public void deleteDocument(Long id, User user) throws Exception {
         log.debug("Attempting to delete document with ID: {} for user: {}", id, user.getUsername());
         Document document = getDocumentById(id, user);
@@ -119,6 +139,8 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #user.id + '_status:' + #status + '_documents'")
     public List<Document> getUserDocumentsByStatus(User user, String status) {
         log.debug("Fetching documents for user: {} with status: {}", user.getUsername(), status);
         List<Document> documents = documentRepository.findByUserAndStatusOrderByUploadedAtDesc(user, status);
@@ -127,6 +149,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Cacheable(key = "'user:' + #user.id + '_documentCount'")
     public Long getUserDocumentCount(User user) {
         log.debug("Counting documents for user: {}", user.getUsername());
         Long count = documentRepository.countByUser(user);
@@ -136,6 +159,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     // Admin methods
     @Override
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "adminCache", key = "'allDocuments'")
     public List<Document> getAllDocuments() {
         log.debug("Fetching all documents (admin request)");
         List<Document> documents = documentRepository.findAllByOrderByUploadedAtDesc();
@@ -144,6 +169,8 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "adminCache", key = "'doc:' + #id")
     public Document getDocumentByIdAdmin(Long id) throws Exception {
         log.debug("Admin fetching document with ID: {}", id);
         return documentRepository.findById(id)

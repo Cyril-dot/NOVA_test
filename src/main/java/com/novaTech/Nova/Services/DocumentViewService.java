@@ -4,6 +4,8 @@ import com.novaTech.Nova.Entities.ProjectDocument;
 import com.novaTech.Nova.Entities.repo.ProjectDocumentRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,11 +16,13 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@CacheConfig(cacheNames = "documentViews")
 public class DocumentViewService {
 
     private final ProjectDocumentRepo projectDocumentRepo;
 
     @Transactional(readOnly = true)
+    @Cacheable(key = "'doc:' + #documentId + '_user:' + #userId + '_content'")
     public byte[] getDocumentContent(UUID documentId, UUID userId) {
         log.info("Fetching document ID: {} for user ID: {}", documentId, userId);
 

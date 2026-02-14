@@ -55,7 +55,11 @@ public class OncePerRequestFilterService {
                     || path.startsWith("/actuator/")
                     || path.startsWith("/ws/")
                     || path.startsWith("/ws-meeting/")
-                    || path.equals("/favicon.ico")                        // ✅ browser auto-request
+                    || path.equals("/favicon.ico")
+                    // ✅ SPECIFIC meeting endpoints that don't need JWT
+                    || path.equals("/api/meetings/join/guest")
+                    || path.startsWith("/api/meetings/validate/")
+                    || (path.matches("/api/meetings/[A-Z0-9-]+") && request.getMethod().equals("GET"))
                     || path.startsWith("/.well-known/");
         }
         @Override

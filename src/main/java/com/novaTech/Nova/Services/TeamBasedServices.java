@@ -13,6 +13,10 @@ import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +32,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@CacheConfig(cacheNames = "teamProjects")
 public class TeamBasedServices {
 
     private final UserRepo userRepo;
@@ -57,6 +62,12 @@ public class TeamBasedServices {
     // ==================== TEAM PROJECT METHODS ====================
 
     // to create a team based project
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'team:' + #teamId + '_projects'"),
+            @CacheEvict(key = "'user:' + #adminId + '_projects'"),
+            @CacheEvict(key = "'team:' + #teamId + '_projectCount'")
+    })
     public TeamProjectResponse createTeamProject(TeamProjectCreateDTO dto, UUID adminId, UUID teamId) throws IOException {
         log.info("Creating team project for admin ID, {}", adminId);
 
@@ -259,6 +270,13 @@ public class TeamBasedServices {
     }
 
     // to update team projects
+    @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'project:' + #teamProjectId"),
+            @CacheEvict(key = "'project:' + #teamProjectId + '_documents'"),
+            @CacheEvict(key = "'team:' + #teamId + '_projects'"),
+            @CacheEvict(key = "'user:' + #adminId + '_projects'")
+    })
     public TeamProjectResponse updateTeamProject(UUID teamProjectId, UUID adminId, TeamProjectUpdateDTO dto, UUID teamId) throws IOException {
         User user = userRepo.findById(adminId)
                 .orElseThrow(() -> {
@@ -324,6 +342,7 @@ public class TeamBasedServices {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(key = "'project:' + #teamProjectId")
     public TeamProjectResponse getProjectById(UUID teamProjectId, UUID userId, UUID teamId) {
         // ✅ Fetch the project and ensure the user is a member in one query
         TeamProject project = teamProjectRepo.findByIdAndUserIsTeamMember(teamProjectId, userId)
@@ -346,6 +365,7 @@ public class TeamBasedServices {
 
     // get all team projects
     @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #userId + '_projects'")
     public List<TeamProjectResponse> getAllProjects(UUID userId) {
         log.info("Fetching all projects for team user");
 
@@ -369,6 +389,10 @@ public class TeamBasedServices {
 
     // to get all project documents, that the entire history of all documents uploaded
     @Transactional(readOnly = true)
+    @Cacheable(
+            cacheNames = "projectDocuments",
+            key = "'user:' + #userId + '_allDocuments'"
+    )
     public List<TeamProjectDocumentResponseDTO> getAllDocumentsForUser(UUID userId) {
         log.info("Fetching all projects for user ID: {}", userId);
 
@@ -411,6 +435,12 @@ public class TeamBasedServices {
 
     // to delete a team project
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'project:' + #projectId"),
+            @CacheEvict(key = "'project:' + #projectId + '_documents'", cacheNames = "projectDocuments"),
+            @CacheEvict(key = "'project:' + #projectId + '_tasks'", cacheNames = "teamTasks"),
+            @CacheEvict(allEntries = true, cacheNames = "teamProjects")  // Clear all project caches
+    })
     public void deleteProject(UUID projectId, UUID userId) {
         log.info("Deleting project ID: {} for user ID: {}", projectId, userId);
 
@@ -426,6 +456,11 @@ public class TeamBasedServices {
 
     // to upload documents to a team project
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "projectDocuments", key = "'project:' + #projectId + '_documents'"),
+            @CacheEvict(cacheNames = "projectDocuments", key = "'user:' + #userId + '_allDocuments'"),
+            @CacheEvict(key = "'project:' + #projectId")  // Project response includes document count
+    })
     public List<TeamProjectDocumentResponseDTO> uploadDocument(UUID projectId, UUID userId, List<MultipartFile> files, String description, UUID teamId) throws IOException {
         log.info("Uploading {} documents to project ID: {}", files.size(), projectId);
 
@@ -458,6 +493,11 @@ public class TeamBasedServices {
 
     // to delete project document
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "projectDocuments", key = "'project:' + #projectId + '_documents'"),
+            @CacheEvict(cacheNames = "projectDocuments", key = "'user:' + #userId + '_allDocuments'"),
+            @CacheEvict(key = "'project:' + #projectId")
+    })
     public String deleteDocument(UUID documentId, UUID userId, UUID teamId, UUID projectId) {
         log.info("Deleting document ID: {} for user ID: {}", documentId, userId);
 
@@ -492,6 +532,7 @@ public class TeamBasedServices {
     }
 
     // view team project summary
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_summary'")
     public List<TeamProjectSummaryDto> viewAllProjectSummary(UUID userId, UUID teamId) {
         log.info("Fetching all projects for team user");
 
@@ -527,6 +568,7 @@ public class TeamBasedServices {
     }
 
     // to count the number of projects
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_count'")
     public long getProjectCount(UUID userId, UUID teamId) {
         log.info("Fetching project count for user and team");
 
@@ -551,6 +593,7 @@ public class TeamBasedServices {
     }
 
     // count based on status
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_countBasedOnStatus'")
     public long countBasedOnStatusProjects(UUID userId, UUID teamId, ProjectStatus status) {
         log.info("Fetching project count by status for user and team");
 
@@ -575,6 +618,7 @@ public class TeamBasedServices {
     }
 
     // view overdue projects using repository filtering
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_overdue'")
     public List<TeamProjectSummaryDto> viewOverdueProjects(UUID userId, UUID teamId) {
         log.info("Fetching overdue projects for user {} in team {}", userId, teamId);
 
@@ -616,6 +660,11 @@ public class TeamBasedServices {
      * Create a task for a team project
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "teamTasks", key = "'project:' + #projectId + '_tasks'"),
+            @CacheEvict(cacheNames = "teamTasks", key = "'user:' + #userId + '_team:' + #teamId + '_tasks'"),
+            @CacheEvict(cacheNames = "teamTasks", allEntries = true, condition = "#dto.assignedToUserId != null")
+    })
     public TeamTaskResponseDTO createTask(UUID projectId, UUID userId, UUID teamId, TeamTaskCreateDTO dto) {
         log.info("Creating task for project ID: {} by user ID: {}", projectId, userId);
 
@@ -677,6 +726,10 @@ public class TeamBasedServices {
      * Update a task
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "teamTasks", key = "'task:' + #taskId"),
+            @CacheEvict(cacheNames = "teamTasks", allEntries = true)  // Clear all task caches due to potential reassignments
+    })
     public TeamTaskResponseDTO updateTask(UUID taskId, UUID userId, TeamTaskUpdateDTO dto) {
         log.info("Updating task ID: {} by user ID: {}", taskId, userId);
 
@@ -746,6 +799,10 @@ public class TeamBasedServices {
      * Delete a task
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "teamTasks", key = "'task:' + #taskId"),
+            @CacheEvict(cacheNames = "teamTasks", allEntries = true)
+    })
     public String deleteTask(UUID taskId, UUID userId) {
         log.info("Deleting task ID: {} by user ID: {}", taskId, userId);
 
@@ -773,6 +830,10 @@ public class TeamBasedServices {
      * Get all tasks for a project
      */
     @Transactional(readOnly = true)
+    @Cacheable(
+            cacheNames = "teamTasks",
+            key = "'project:' + #projectId + '_tasks'"
+    )
     public List<TeamTaskResponseDTO> getProjectTasks(UUID projectId, UUID userId) {
         log.info("Fetching tasks for project ID: {}", projectId);
 
@@ -797,6 +858,10 @@ public class TeamBasedServices {
     /**
      * Get tasks assigned to a user
      */
+    @Cacheable(
+            cacheNames = "teamTasks",
+            key = "'user:' + #userId + '_team:' + #teamId + '_tasks'"
+    )
     @Transactional(readOnly = true)
     public List<TeamTaskResponseDTO> getUserTasks(UUID userId, UUID teamId) {
         log.info("Fetching tasks for user ID: {} in team ID: {}", userId, teamId);
@@ -818,6 +883,10 @@ public class TeamBasedServices {
      * Get overdue tasks
      */
     @Transactional(readOnly = true)
+    @Cacheable(
+            cacheNames = "shortLivedCache",
+            key = "'user:' + #userId + '_team:' + #teamId + '_overdueTasks'"
+    )
     public List<TeamTaskResponseDTO> getOverdueTasks(UUID userId, UUID teamId) {
         log.info("Fetching overdue tasks for user ID: {} in team ID: {}", userId, teamId);
 
@@ -860,6 +929,11 @@ public class TeamBasedServices {
      * Create a reminder for a task or project
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "teamReminders", key = "'user:' + #userId + '_team:' + #teamId + '_reminders'"),
+            @CacheEvict(cacheNames = "teamReminders", key = "'project:' + #dto.projectId + '_reminders'", condition = "#dto.projectId != null"),
+            @CacheEvict(cacheNames = "teamReminders", key = "'task:' + #dto.taskId + '_reminders'", condition = "#dto.taskId != null")
+    })
     public TeamReminderResponseDTO createReminder(UUID userId, UUID teamId, TeamReminderCreateDTO dto) {
         log.info("Creating reminder for user ID: {}", userId);
 
@@ -920,6 +994,9 @@ public class TeamBasedServices {
      * Update a reminder
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "teamReminders", allEntries = true)  // Simplified due to complexity
+    })
     public TeamReminderResponseDTO updateReminder(UUID reminderId, UUID userId, TeamReminderUpdateDTO dto) {
         log.info("Updating reminder ID: {} by user ID: {}", reminderId, userId);
 
@@ -960,6 +1037,7 @@ public class TeamBasedServices {
      * Delete a reminder
      */
     @Transactional
+    @CacheEvict(cacheNames = "teamReminders", allEntries = true)
     public String deleteReminder(UUID reminderId, UUID userId) {
         log.info("Deleting reminder ID: {} by user ID: {}", reminderId, userId);
 
@@ -981,6 +1059,10 @@ public class TeamBasedServices {
      * Get all reminders for a user in a team
      */
     @Transactional(readOnly = true)
+    @Cacheable(
+            cacheNames = "teamReminders",
+            key = "'user:' + #userId + '_team:' + #teamId + '_reminders'"
+    )
     public List<TeamReminderResponseDTO> getUserReminders(UUID userId, UUID teamId) {
         log.info("Fetching reminders for user ID: {} in team ID: {}", userId, teamId);
 
@@ -997,9 +1079,11 @@ public class TeamBasedServices {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get reminders for a specific project
-     */
+
+    @Cacheable(
+            cacheNames = "teamReminders",
+            key = "'project:' + #projectId + '_reminders'"
+    )
     @Transactional(readOnly = true)
     public List<TeamReminderResponseDTO> getProjectReminders(UUID projectId, UUID userId) {
         log.info("Fetching reminders for project ID: {}", projectId);
@@ -1022,6 +1106,10 @@ public class TeamBasedServices {
     /**
      * Get reminders for a specific task
      */
+    @Cacheable(
+            cacheNames = "teamReminders",
+            key = "'task:' + #taskId + '_reminders'"
+    )
     @Transactional(readOnly = true)
     public List<TeamReminderResponseDTO> getTaskReminders(UUID taskId, UUID userId) {
         log.info("Fetching reminders for task ID: {}", taskId);

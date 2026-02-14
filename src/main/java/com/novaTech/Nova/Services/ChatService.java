@@ -15,6 +15,10 @@ import com.novaTech.Nova.Services.AI.LLMService;
 import com.novaTech.Nova.Services.AI.SearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheConfig;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
@@ -26,6 +30,7 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 @RequiredArgsConstructor
+@CacheConfig(cacheNames = "chats")
 public class ChatService {
 
     private final ChatRepository chatRepository;
@@ -38,6 +43,11 @@ public class ChatService {
      * Process a chat message - creates chat if needed, saves messages, gets AI response
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #user.id + '_chats'"),
+            @CacheEvict(key = "'chat:' + #result.chatId", condition = "#result != null"),
+            @CacheEvict(key = "'chat:' + #result.chatId + '_history'", condition = "#result != null")
+    })
     public Mono<ChatResponse> processMessage(ChatRequest request, User user) {
         log.info("Processing message for user: {}", user.getId());
 
@@ -148,6 +158,11 @@ public class ChatService {
      * Process a chat message with STREAMING
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #user.id + '_chats'"),
+            @CacheEvict(key = "'chat:' + #request.chatId", condition = "#request.chatId != null"),
+            @CacheEvict(key = "'chat:' + #request.chatId + '_history'", condition = "#request.chatId != null")
+    })
     public Flux<String> processMessageStream(ChatRequest request, User user) {
         log.info("Processing STREAMING message for user: {}", user.getId());
 
@@ -260,6 +275,7 @@ public class ChatService {
      * Create a new chat for the user
      */
     @Transactional
+    @CacheEvict(key = "'user:' + #user.id + '_chats'")
     public Chat createNewChat(User user, Model model) {
         log.info("Creating new chat for user: {}", user.getId());
 
@@ -328,6 +344,8 @@ public class ChatService {
     /**
      * Get all chats for a user
      */
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #user.id + '_chats'")
     public List<ChatHistoryResponse> getUserChats(User user) {
         List<Chat> chats = chatRepository.findByUserAndIsActiveTrueOrderByUpdatedAtDesc(user);
 
@@ -345,6 +363,8 @@ public class ChatService {
     /**
      * Get specific chat with full message history
      */
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'chat:' + #chatId + '_history'")
     public ChatHistoryResponse getChatHistory(Long chatId, User user) {
         Chat chat = chatRepository.findByIdAndUserWithMessages(chatId, user)
                 .orElseThrow(() -> new RuntimeException("Chat not found"));
@@ -367,6 +387,12 @@ public class ChatService {
      * Delete a chat (soft delete)
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #user.id + '_chats'"),
+            @CacheEvict(key = "'chat:' + #chatId"),
+            @CacheEvict(key = "'chat:' + #chatId + '_history'"),
+            @CacheEvict(key = "'user:' + #user.id + '_chatHistory'")
+    })
     public void deleteChat(Long chatId, User user) {
         Chat chat = chatRepository.findByIdAndUserAndIsActiveTrue(chatId, user)
                 .orElseThrow(() -> new RuntimeException("Chat not found"));
@@ -380,6 +406,11 @@ public class ChatService {
      * Clear all messages from a chat
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'chat:' + #chatId"),
+            @CacheEvict(key = "'chat:' + #chatId + '_history'"),
+            @CacheEvict(key = "'user:' + #user.id + '_chats'")
+    })
     public void clearChat(Long chatId, User user) {
         Chat chat = chatRepository.findByIdAndUserAndIsActiveTrue(chatId, user)
                 .orElseThrow(() -> new RuntimeException("Chat not found"));
@@ -394,6 +425,8 @@ public class ChatService {
     /**
      * Get all chat history for a user with message details
      */
+    @Transactional(readOnly = true)
+    @Cacheable(key = "'user:' + #user.id + '_chatHistory'")
     public List<ChatHistoryResponse> getUserChatHistory(User user) {
         log.info("Fetching chat history for user: {}", user.getId());
 
@@ -426,6 +459,11 @@ public class ChatService {
      * Delete all chat history for a user (soft delete all chats)
      */
     @Transactional
+    @Caching(evict = {
+            @CacheEvict(key = "'user:' + #user.id + '_chats'"),
+            @CacheEvict(key = "'user:' + #user.id + '_chatHistory'"),
+            @CacheEvict(cacheNames = "chats", allEntries = true)  // Clear all to be safe
+    })
     public void clearAllUserChatHistory(User user) {
         log.info("Clearing all chat history for user: {}", user.getId());
 
