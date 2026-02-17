@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -56,8 +57,8 @@ public class TeamBasedController {
      * Create a new team project
      * POST /api/v1/team/{teamId}/projects
      */
-    @PostMapping(value = "/{teamId}/projects", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<TeamProjectResponse> createTeamProject(
+    @PostMapping(value = "/{teamId}/projects", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<?> createTeamProject(
             @PathVariable UUID teamId,
             @RequestParam("title") String title,
             @RequestParam("description") String description,
@@ -68,8 +69,7 @@ public class TeamBasedController {
             @RequestParam(value = "documentDescription", required = false) String documentDescription) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             TeamProjectCreateDTO dto = new TeamProjectCreateDTO(
                     title,
@@ -86,12 +86,11 @@ public class TeamBasedController {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
-        } catch (IOException e) {
-            log.error("Error uploading documents: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } catch (Exception e) {
+            // FIX: consolidated catch block - always return error body
             log.error("Error creating team project: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            String message = (e instanceof IOException) ? "Error uploading documents: " + e.getMessage() : e.getMessage();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
         }
     }
 
@@ -99,8 +98,8 @@ public class TeamBasedController {
      * Update a team project
      * PUT /api/v1/team/{teamId}/projects/{projectId}
      */
-    @PutMapping(value = "/{teamId}/projects/{projectId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<TeamProjectResponse> updateTeamProject(
+    @PutMapping(value = "/{teamId}/projects/{projectId}", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
+    public ResponseEntity<?> updateTeamProject(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId,
             @RequestParam(value = "title", required = false) String title,
@@ -112,8 +111,7 @@ public class TeamBasedController {
             @RequestParam(value = "documentDescription", required = false) String documentDescription) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             TeamProjectUpdateDTO dto = TeamProjectUpdateDTO.builder()
                     .title(title)
@@ -130,12 +128,10 @@ public class TeamBasedController {
 
             return ResponseEntity.ok(response);
 
-        } catch (IOException e) {
-            log.error("Error uploading documents: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } catch (Exception e) {
             log.error("Error updating team project: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            String message = (e instanceof IOException) ? "Error uploading documents: " + e.getMessage() : e.getMessage();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
         }
     }
 
@@ -144,13 +140,12 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/{projectId}
      */
     @GetMapping("/{teamId}/projects/{projectId}")
-    public ResponseEntity<TeamProjectResponse> getProjectById(
+    public ResponseEntity<?> getProjectById(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching project: {} for user: {}", projectId, userId);
             TeamProjectResponse response = teamBasedServices.getProjectById(projectId, userId, teamId);
@@ -159,7 +154,8 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            // FIX: return error body instead of empty 404
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -168,10 +164,9 @@ public class TeamBasedController {
      * GET /api/v1/team/projects
      */
     @GetMapping("/projects")
-    public ResponseEntity<List<TeamProjectResponse>> getAllProjects() {
+    public ResponseEntity<?> getAllProjects() {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching all projects for user: {}", userId);
             List<TeamProjectResponse> response = teamBasedServices.getAllProjects(userId);
@@ -180,7 +175,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching projects: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -189,22 +184,22 @@ public class TeamBasedController {
      * DELETE /api/v1/team/{teamId}/projects/{projectId}
      */
     @DeleteMapping("/{teamId}/projects/{projectId}")
-    public ResponseEntity<String> deleteProject(
+    public ResponseEntity<?> deleteProject(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Deleting project: {} for user: {}", projectId, userId);
-            teamBasedServices.deleteProject(projectId, userId);
+            // FIX: pass teamId to service for ownership validation
+            teamBasedServices.deleteProject(projectId, userId, teamId);
 
-            return ResponseEntity.ok("Project deleted successfully");
+            return ResponseEntity.ok(Map.of("message", "Project deleted successfully"));
 
         } catch (Exception e) {
             log.error("Error deleting project: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -213,12 +208,9 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/summary
      */
     @GetMapping("/{teamId}/projects/summary")
-    public ResponseEntity<List<TeamProjectSummaryDto>> getProjectSummary(
-            @PathVariable UUID teamId) {
-
+    public ResponseEntity<?> getProjectSummary(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching project summary for team: {}, user: {}", teamId, userId);
             List<TeamProjectSummaryDto> response = teamBasedServices.viewAllProjectSummary(userId, teamId);
@@ -227,7 +219,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project summary: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -236,10 +228,9 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/count
      */
     @GetMapping("/{teamId}/projects/count")
-    public ResponseEntity<Long> getProjectCount(@PathVariable UUID teamId) {
+    public ResponseEntity<?> getProjectCount(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching project count for team: {}, user: {}", teamId, userId);
             long count = teamBasedServices.getProjectCount(userId, teamId);
@@ -248,7 +239,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project count: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -257,13 +248,12 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/count/status/{status}
      */
     @GetMapping("/{teamId}/projects/count/status/{status}")
-    public ResponseEntity<Long> getProjectCountByStatus(
+    public ResponseEntity<?> getProjectCountByStatus(
             @PathVariable UUID teamId,
             @PathVariable ProjectStatus status) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching project count by status {} for team: {}, user: {}", status, teamId, userId);
             long count = teamBasedServices.countBasedOnStatusProjects(userId, teamId, status);
@@ -272,7 +262,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project count by status: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -281,12 +271,9 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/overdue
      */
     @GetMapping("/{teamId}/projects/overdue")
-    public ResponseEntity<List<TeamProjectSummaryDto>> getOverdueProjects(
-            @PathVariable UUID teamId) {
-
+    public ResponseEntity<?> getOverdueProjects(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching overdue projects for team: {}, user: {}", teamId, userId);
             List<TeamProjectSummaryDto> response = teamBasedServices.viewOverdueProjects(userId, teamId);
@@ -295,7 +282,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching overdue projects: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -305,16 +292,15 @@ public class TeamBasedController {
      * Upload documents to a project
      * POST /api/v1/team/{teamId}/projects/{projectId}/documents
      */
-    @PostMapping(value = "/{teamId}/projects/{projectId}/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<List<TeamProjectDocumentResponseDTO>> uploadDocuments(
+    @PostMapping(value = "/{teamId}/projects/{projectId}/documents", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE})
+    public ResponseEntity<?> uploadDocuments(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId,
             @RequestParam("files") List<MultipartFile> files,
             @RequestParam(value = "description", required = false) String description) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Uploading {} documents to project: {}", files.size(), projectId);
             List<TeamProjectDocumentResponseDTO> response = teamBasedServices.uploadDocument(
@@ -322,12 +308,10 @@ public class TeamBasedController {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
-        } catch (IOException e) {
-            log.error("Error uploading documents: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } catch (Exception e) {
             log.error("Error uploading documents: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            String message = (e instanceof IOException) ? "Error uploading documents: " + e.getMessage() : e.getMessage();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", message));
         }
     }
 
@@ -336,13 +320,12 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/{projectId}/documents
      */
     @GetMapping("/{teamId}/projects/{projectId}/documents")
-    public ResponseEntity<List<TeamProjectDocumentResponseDTO>> getProjectDocuments(
+    public ResponseEntity<?> getProjectDocuments(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching documents for project: {}", projectId);
             List<TeamProjectDocumentResponseDTO> response = teamBasedServices.getProjectDocuments(projectId, userId);
@@ -351,7 +334,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project documents: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -360,10 +343,9 @@ public class TeamBasedController {
      * GET /api/v1/team/documents
      */
     @GetMapping("/documents")
-    public ResponseEntity<List<TeamProjectDocumentResponseDTO>> getAllDocuments() {
+    public ResponseEntity<?> getAllDocuments() {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching all documents for user: {}", userId);
             List<TeamProjectDocumentResponseDTO> response = teamBasedServices.getAllDocumentsForUser(userId);
@@ -372,7 +354,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching documents: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -381,23 +363,22 @@ public class TeamBasedController {
      * DELETE /api/v1/team/{teamId}/projects/{projectId}/documents/{documentId}
      */
     @DeleteMapping("/{teamId}/projects/{projectId}/documents/{documentId}")
-    public ResponseEntity<String> deleteDocument(
+    public ResponseEntity<?> deleteDocument(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId,
             @PathVariable UUID documentId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Deleting document: {} from project: {}", documentId, projectId);
             String response = teamBasedServices.deleteDocument(documentId, userId, teamId, projectId);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("message", response));
 
         } catch (Exception e) {
             log.error("Error deleting document: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -408,14 +389,13 @@ public class TeamBasedController {
      * POST /api/v1/team/{teamId}/projects/{projectId}/tasks
      */
     @PostMapping("/{teamId}/projects/{projectId}/tasks")
-    public ResponseEntity<TeamTaskResponseDTO> createTask(
+    public ResponseEntity<?> createTask(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId,
             @RequestBody TeamTaskCreateDTO dto) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Creating task for project: {} by user: {}", projectId, userId);
             TeamTaskResponseDTO response = teamBasedServices.createTask(projectId, userId, teamId, dto);
@@ -424,7 +404,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error creating task: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -433,23 +413,23 @@ public class TeamBasedController {
      * PUT /api/v1/team/{teamId}/tasks/{taskId}
      */
     @PutMapping("/{teamId}/tasks/{taskId}")
-    public ResponseEntity<TeamTaskResponseDTO> updateTask(
+    public ResponseEntity<?> updateTask(
             @PathVariable UUID teamId,
             @PathVariable UUID taskId,
             @RequestBody TeamTaskUpdateDTO dto) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Updating task: {} by user: {}", taskId, userId);
-            TeamTaskResponseDTO response = teamBasedServices.updateTask(taskId, userId, dto);
+            // FIX: pass teamId to service for ownership validation
+            TeamTaskResponseDTO response = teamBasedServices.updateTask(taskId, userId, teamId, dto);
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             log.error("Error updating task: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -458,22 +438,22 @@ public class TeamBasedController {
      * DELETE /api/v1/team/{teamId}/tasks/{taskId}
      */
     @DeleteMapping("/{teamId}/tasks/{taskId}")
-    public ResponseEntity<String> deleteTask(
+    public ResponseEntity<?> deleteTask(
             @PathVariable UUID teamId,
             @PathVariable UUID taskId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Deleting task: {} by user: {}", taskId, userId);
-            String response = teamBasedServices.deleteTask(taskId, userId);
+            // FIX: pass teamId to service for ownership validation
+            String response = teamBasedServices.deleteTask(taskId, userId, teamId);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("message", response));
 
         } catch (Exception e) {
             log.error("Error deleting task: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -482,13 +462,12 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/{projectId}/tasks
      */
     @GetMapping("/{teamId}/projects/{projectId}/tasks")
-    public ResponseEntity<List<TeamTaskResponseDTO>> getProjectTasks(
+    public ResponseEntity<?> getProjectTasks(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching tasks for project: {}", projectId);
             List<TeamTaskResponseDTO> response = teamBasedServices.getProjectTasks(projectId, userId);
@@ -497,7 +476,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project tasks: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -506,12 +485,9 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/tasks/my-tasks
      */
     @GetMapping("/{teamId}/tasks/my-tasks")
-    public ResponseEntity<List<TeamTaskResponseDTO>> getMyTasks(
-            @PathVariable UUID teamId) {
-
+    public ResponseEntity<?> getMyTasks(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching tasks for user: {} in team: {}", userId, teamId);
             List<TeamTaskResponseDTO> response = teamBasedServices.getUserTasks(userId, teamId);
@@ -520,7 +496,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching user tasks: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -529,12 +505,9 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/tasks/overdue
      */
     @GetMapping("/{teamId}/tasks/overdue")
-    public ResponseEntity<List<TeamTaskResponseDTO>> getOverdueTasks(
-            @PathVariable UUID teamId) {
-
+    public ResponseEntity<?> getOverdueTasks(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching overdue tasks for user: {} in team: {}", userId, teamId);
             List<TeamTaskResponseDTO> response = teamBasedServices.getOverdueTasks(userId, teamId);
@@ -543,7 +516,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching overdue tasks: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -554,13 +527,12 @@ public class TeamBasedController {
      * POST /api/v1/team/{teamId}/reminders
      */
     @PostMapping("/{teamId}/reminders")
-    public ResponseEntity<TeamReminderResponseDTO> createReminder(
+    public ResponseEntity<?> createReminder(
             @PathVariable UUID teamId,
             @RequestBody TeamReminderCreateDTO dto) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Creating reminder for user: {} in team: {}", userId, teamId);
             TeamReminderResponseDTO response = teamBasedServices.createReminder(userId, teamId, dto);
@@ -569,7 +541,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error creating reminder: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -578,14 +550,13 @@ public class TeamBasedController {
      * PUT /api/v1/team/{teamId}/reminders/{reminderId}
      */
     @PutMapping("/{teamId}/reminders/{reminderId}")
-    public ResponseEntity<TeamReminderResponseDTO> updateReminder(
+    public ResponseEntity<?> updateReminder(
             @PathVariable UUID teamId,
             @PathVariable UUID reminderId,
             @RequestBody TeamReminderUpdateDTO dto) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Updating reminder: {} by user: {}", reminderId, userId);
             TeamReminderResponseDTO response = teamBasedServices.updateReminder(reminderId, userId, dto);
@@ -594,7 +565,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error updating reminder: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -603,22 +574,21 @@ public class TeamBasedController {
      * DELETE /api/v1/team/{teamId}/reminders/{reminderId}
      */
     @DeleteMapping("/{teamId}/reminders/{reminderId}")
-    public ResponseEntity<String> deleteReminder(
+    public ResponseEntity<?> deleteReminder(
             @PathVariable UUID teamId,
             @PathVariable UUID reminderId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Deleting reminder: {} by user: {}", reminderId, userId);
             String response = teamBasedServices.deleteReminder(reminderId, userId);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("message", response));
 
         } catch (Exception e) {
             log.error("Error deleting reminder: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -627,12 +597,9 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/reminders
      */
     @GetMapping("/{teamId}/reminders")
-    public ResponseEntity<List<TeamReminderResponseDTO>> getUserReminders(
-            @PathVariable UUID teamId) {
-
+    public ResponseEntity<?> getUserReminders(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching reminders for user: {} in team: {}", userId, teamId);
             List<TeamReminderResponseDTO> response = teamBasedServices.getUserReminders(userId, teamId);
@@ -641,7 +608,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching user reminders: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -650,13 +617,12 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/projects/{projectId}/reminders
      */
     @GetMapping("/{teamId}/projects/{projectId}/reminders")
-    public ResponseEntity<List<TeamReminderResponseDTO>> getProjectReminders(
+    public ResponseEntity<?> getProjectReminders(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching reminders for project: {}", projectId);
             List<TeamReminderResponseDTO> response = teamBasedServices.getProjectReminders(projectId, userId);
@@ -665,7 +631,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching project reminders: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -674,13 +640,12 @@ public class TeamBasedController {
      * GET /api/v1/team/{teamId}/tasks/{taskId}/reminders
      */
     @GetMapping("/{teamId}/tasks/{taskId}/reminders")
-    public ResponseEntity<List<TeamReminderResponseDTO>> getTaskReminders(
+    public ResponseEntity<?> getTaskReminders(
             @PathVariable UUID teamId,
             @PathVariable UUID taskId) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Fetching reminders for task: {}", taskId);
             List<TeamReminderResponseDTO> response = teamBasedServices.getTaskReminders(taskId, userId);
@@ -689,7 +654,7 @@ public class TeamBasedController {
 
         } catch (Exception e) {
             log.error("Error fetching task reminders: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -700,22 +665,21 @@ public class TeamBasedController {
      * POST /api/v1/team/{teamId}/messages/send
      */
     @PostMapping("/{teamId}/messages/send")
-    public ResponseEntity<String> sendTeamMessage(
+    public ResponseEntity<?> sendTeamMessage(
             @PathVariable UUID teamId,
             @RequestBody TeamMessageDTO dto) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Sending team message from user: {} to team: {}", userId, teamId);
             String response = teamBasedServices.sendTeamMessage(userId, teamId, dto);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("message", response));
 
         } catch (Exception e) {
             log.error("Error sending team message: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -724,23 +688,22 @@ public class TeamBasedController {
      * POST /api/v1/team/{teamId}/projects/{projectId}/send-update
      */
     @PostMapping("/{teamId}/projects/{projectId}/send-update")
-    public ResponseEntity<String> sendProjectUpdate(
+    public ResponseEntity<?> sendProjectUpdate(
             @PathVariable UUID teamId,
             @PathVariable UUID projectId,
             @RequestBody ProjectUpdateMessageDTO dto) {
 
         try {
-            UserPrincipal principal = userPrincipal();
-            UUID userId = principal.getUserId();
+            UUID userId = userPrincipal().getUserId();
 
             log.info("Sending project update for project: {} from user: {}", projectId, userId);
             String response = teamBasedServices.sendProjectUpdate(projectId, userId, dto);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(Map.of("message", response));
 
         } catch (Exception e) {
             log.error("Error sending project update: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
         }
     }
 }

@@ -38,7 +38,7 @@ public class UserRegistrationService {
     private final EmailService emailService;
 
     // to cache user data
-    @CacheEvict(key = "all-active")
+    @CacheEvict(key = "'all-active'")
     public UserResponseDTO createUser(UserRegistrationDTO dto) throws IOException {
 
         if (userRepo.findByEmail(dto.getEmail()).isPresent()) {
@@ -259,7 +259,7 @@ public class UserRegistrationService {
     // ========================
     // GET AUTHENTICATED USER PROFILE IMAGE
     // ========================
-    @Cacheable(key = "#email + '_profileImage'")
+    @Cacheable(key = "'email:' + #email + '_profileImage'")
     @Transactional(readOnly = true)
     public byte[] getAuthenticatedUserProfileImage(String email) {
         User user = userRepo.findByUserEmail(email);
@@ -275,7 +275,7 @@ public class UserRegistrationService {
     // DELETE PROFILE IMAGE
     // ========================
     @Transactional
-    @CacheEvict(key = "#userId + '_ profileImage'" )
+    @CacheEvict(key = "#userId + '_profileImage'" )
     public UserResponseDTO deleteProfileImage(UUID userId) {
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -292,7 +292,7 @@ public class UserRegistrationService {
     // DELETE AUTHENTICATED USER PROFILE IMAGE
     // ========================
     @Transactional
-    @CacheEvict(key = "'email:' + #email + '_ profileImage'")
+    @CacheEvict(key = "'email:' + #email + '_profileImage'")
     public UserResponseDTO deleteAuthenticatedUserProfileImage(String email) {
         User user = userRepo.findByUserEmail(email);
         if (user == null) {
@@ -391,17 +391,6 @@ public class UserRegistrationService {
                     log.warn("User not found @ {}", loginRequest.email());
                     return new RuntimeException("User not found");
                 });
-
-        // now to check if mfa is enabled
-        if (user.isMfaEnabled()){
-            log.warn("MFA is enabled for user, verify mfa to enable");
-            // Do NOT throw an exception if you want to return a response
-            return new TokenDto(
-                    null,
-                    null,
-                    "MFA is enabled for user, verify your mfa to login successfully"
-            );
-        }
 
         // to verify password
         if (!verifyPassword(user, loginRequest.password())){
@@ -622,47 +611,6 @@ public class UserRegistrationService {
         log.info("MFA details retrieved successfully for user email: {}", email);
 
         return new NewMfaKeys(user.getMfaSecret(), user.getMfaCode());
-    }
-
-    // login with mfa enabled
-    public TokenDto loginWithMfa(LoginRequest request){
-        log.info("Login with MFA attempt for email: {}", request.email());
-
-        User user = findByEmail(request.email());
-        if (user == null){
-            log.warn("Login with MFA failed: user not found for email: {}", request.email());
-            throw new RuntimeException("User does not exist");
-        }
-
-        log.debug("User found for MFA login, email: {}", request.email());
-
-        // to check if mfa is enabled
-        if (!user.isMfaEnabled()){
-            log.warn("Login with MFA failed: MFA not enabled for email: {}", request.email());
-            throw new RuntimeException("MFA is not enabled for this user");
-        }
-
-        log.info("MFA is enabled for email: {}", request.email());
-
-        // password check
-        if (!verifyPassword(user, request.password())){
-            log.warn("Login with MFA failed: invalid password for email: {}", request.email());
-            throw new RuntimeException("Invalid password");
-        }
-
-        log.info("Password verified successfully for MFA login, email: {}", request.email());
-
-        String accessToken = tokenService.generateAccessToken(user);
-        String refreshToken = tokenService.generateRefreshToken(user).getToken();
-
-        log.info("Tokens generated successfully for MFA login, email: {}", request.email());
-        log.info("Login with MFA successful for email: {}", request.email());
-
-        return TokenDto.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .message("Login successful")
-                .build();
     }
 
     public boolean verifyPassword(User user, String rawPassword) {

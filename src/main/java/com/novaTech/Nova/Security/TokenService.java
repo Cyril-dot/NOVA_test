@@ -54,6 +54,8 @@ public class TokenService {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + accessExpirationMs);
 
+        log.info("🔐 Generating access token for user: {}", user.getEmail());
+
         // Step 1: Create plain JWT with user claims
         String plainToken = Jwts.builder()
                 .setSubject(user.getEmail())
@@ -64,10 +66,15 @@ public class TokenService {
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
 
+        log.debug("Plain JWT created (length: {})", plainToken.length());
+
         // Step 2: Encrypt the JWT
         String encryptedToken = encryptionService.encryptToken(plainToken);
 
-        log.info("🔒 Generated encrypted access token for user: {}", user.getEmail());
+        log.info("🔒 Generated encrypted access token for user: {} (encrypted length: {})",
+                user.getEmail(), encryptedToken.length());
+        log.debug("Encrypted token preview: {}...", encryptedToken.substring(0, Math.min(50, encryptedToken.length())));
+
         return encryptedToken;
     }
 
@@ -79,6 +86,8 @@ public class TokenService {
     public RefreshToken generateRefreshToken(User user) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + refreshExpirationMs);
+
+        log.info("🔐 Generating refresh token for user: {}", user.getEmail());
 
         // Step 1: Create plain JWT for refresh token
         String plainRefreshToken = Jwts.builder()
@@ -92,6 +101,8 @@ public class TokenService {
 
         // Step 2: Encrypt the refresh token
         String encryptedRefreshToken = encryptionService.encryptToken(plainRefreshToken);
+
+        log.debug("Encrypted refresh token created (length: {})", encryptedRefreshToken.length());
 
         // Step 3: Store encrypted token in database
         Instant expiryInstant = Instant.now().plusMillis(refreshExpirationMs);
@@ -112,26 +123,34 @@ public class TokenService {
      */
     public boolean validateAccessToken(String encryptedToken) {
         try {
+            log.debug("🔍 Validating access token (encrypted length: {})", encryptedToken.length());
+            log.debug("Encrypted token preview: {}...", encryptedToken.substring(0, Math.min(50, encryptedToken.length())));
+
             // Step 1: Decrypt the token
             String plainToken = encryptionService.decryptToken(encryptedToken);
+            log.debug("✅ Token decrypted successfully (plain length: {})", plainToken.length());
 
             // Step 2: Validate JWT
-            Jwts.parserBuilder()
+            Claims claims = Jwts.parserBuilder()
                     .setSigningKey(getSigningKey())
                     .build()
-                    .parseClaimsJws(plainToken);
+                    .parseClaimsJws(plainToken)
+                    .getBody();
 
-            log.debug("✅ Token validated successfully");
+            log.debug("✅ Token validated successfully for user: {}", claims.getSubject());
+            log.debug("Token expires at: {}", claims.getExpiration());
+            log.debug("Token issued at: {}", claims.getIssuedAt());
+
             return true;
 
         } catch (ExpiredJwtException ex) {
-            log.warn("⚠️ Token expired");
+            log.warn("⚠️ Token expired for user: {}", ex.getClaims().getSubject());
             throw new RuntimeException("Token expired", ex);
         } catch (JwtException ex) {
-            log.error("❌ Invalid JWT token", ex);
+            log.error("❌ Invalid JWT token: {}", ex.getMessage());
             throw new RuntimeException("Invalid token", ex);
         } catch (Exception ex) {
-            log.error("❌ Token decryption failed", ex);
+            log.error("❌ Token decryption failed: {}", ex.getMessage(), ex);
             throw new RuntimeException("Invalid or corrupted token", ex);
         }
     }
@@ -141,34 +160,41 @@ public class TokenService {
      */
     public boolean validateRefreshToken(String encryptedRefreshToken) {
         try {
+            log.debug("🔍 Validating refresh token");
+
             // Step 1: Check if token exists in database
             RefreshToken refreshToken = refreshTokenRepo.findByToken(encryptedRefreshToken)
                     .orElseThrow(() -> new RuntimeException("Refresh token not found"));
 
+            log.debug("Refresh token found in database for user: {}", refreshToken.getUser().getEmail());
+
             // Step 2: Check if token is expired
             if (refreshToken.getExpiryDate().isBefore(Instant.now())) {
+                log.warn("⚠️ Refresh token expired for user: {}", refreshToken.getUser().getEmail());
                 refreshTokenRepo.delete(refreshToken);
                 throw new RuntimeException("Refresh token expired");
             }
 
             // Step 3: Decrypt and validate JWT
             String plainToken = encryptionService.decryptToken(encryptedRefreshToken);
+            log.debug("✅ Refresh token decrypted successfully");
+
             Jwts.parserBuilder()
                     .setSigningKey(getSigningKey())
                     .build()
                     .parseClaimsJws(plainToken);
 
-            log.debug("✅ Refresh token validated successfully");
+            log.debug("✅ Refresh token validated successfully for user: {}", refreshToken.getUser().getEmail());
             return true;
 
         } catch (ExpiredJwtException ex) {
             log.warn("⚠️ Refresh token expired");
             throw new RuntimeException("Refresh token expired", ex);
         } catch (JwtException ex) {
-            log.error("❌ Invalid refresh token", ex);
+            log.error("❌ Invalid refresh token: {}", ex.getMessage());
             throw new RuntimeException("Invalid refresh token", ex);
         } catch (Exception ex) {
-            log.error("❌ Refresh token validation failed", ex);
+            log.error("❌ Refresh token validation failed: {}", ex.getMessage());
             throw new RuntimeException("Invalid or corrupted refresh token", ex);
         }
     }
@@ -180,25 +206,31 @@ public class TokenService {
      */
     public String getEmailFromAccessToken(String encryptedToken) {
         try {
+            log.debug("🔍 Extracting email from encrypted token (length: {})", encryptedToken.length());
+
             // Step 1: Decrypt the token
             String plainToken = encryptionService.decryptToken(encryptedToken);
+            log.debug("✅ Token decrypted for email extraction");
 
             // Step 2: Extract email from JWT
-            return Jwts.parserBuilder()
+            String email = Jwts.parserBuilder()
                     .setSigningKey(getSigningKey())
                     .build()
                     .parseClaimsJws(plainToken)
                     .getBody()
                     .getSubject();  // Email is the subject
 
+            log.debug("✅ Email extracted: {}", email);
+            return email;
+
         } catch (ExpiredJwtException ex) {
-            log.error("❌ Token expired while extracting email", ex);
+            log.error("❌ Token expired while extracting email: {}", ex.getClaims().getSubject());
             throw new RuntimeException("Token expired", ex);
         } catch (JwtException ex) {
-            log.error("❌ Invalid token while extracting email", ex);
+            log.error("❌ Invalid token while extracting email: {}", ex.getMessage());
             throw new RuntimeException("Invalid token", ex);
         } catch (Exception ex) {
-            log.error("❌ Failed to decrypt token", ex);
+            log.error("❌ Failed to decrypt token for email extraction: {}", ex.getMessage(), ex);
             throw new RuntimeException("Invalid or corrupted token", ex);
         }
     }
@@ -208,8 +240,11 @@ public class TokenService {
      */
     public Long getUserIdFromAccessToken(String encryptedToken) {
         try {
+            log.debug("🔍 Extracting userId from encrypted token");
+
             // Step 1: Decrypt the token
             String plainToken = encryptionService.decryptToken(encryptedToken);
+            log.debug("✅ Token decrypted for userId extraction");
 
             // Step 2: Extract userId from claims
             Claims claims = Jwts.parserBuilder()
@@ -218,16 +253,19 @@ public class TokenService {
                     .parseClaimsJws(plainToken)
                     .getBody();
 
-            return claims.get("userId", Long.class);
+            Long userId = claims.get("userId", Long.class);
+            log.debug("✅ UserId extracted: {}", userId);
+
+            return userId;
 
         } catch (ExpiredJwtException ex) {
-            log.error("❌ Token expired while extracting userId", ex);
+            log.error("❌ Token expired while extracting userId");
             throw new RuntimeException("Token expired", ex);
         } catch (JwtException ex) {
-            log.error("❌ Invalid token while extracting userId", ex);
+            log.error("❌ Invalid token while extracting userId: {}", ex.getMessage());
             throw new RuntimeException("Invalid token", ex);
         } catch (Exception ex) {
-            log.error("❌ Failed to decrypt token", ex);
+            log.error("❌ Failed to decrypt token for userId extraction: {}", ex.getMessage(), ex);
             throw new RuntimeException("Invalid or corrupted token", ex);
         }
     }
@@ -237,8 +275,11 @@ public class TokenService {
      */
     public String getRoleFromAccessToken(String encryptedToken) {
         try {
+            log.debug("🔍 Extracting role from encrypted token");
+
             // Step 1: Decrypt the token
             String plainToken = encryptionService.decryptToken(encryptedToken);
+            log.debug("✅ Token decrypted for role extraction");
 
             // Step 2: Extract role from claims
             Claims claims = Jwts.parserBuilder()
@@ -247,16 +288,19 @@ public class TokenService {
                     .parseClaimsJws(plainToken)
                     .getBody();
 
-            return claims.get("role", String.class);
+            String role = claims.get("role", String.class);
+            log.debug("✅ Role extracted: {}", role);
+
+            return role;
 
         } catch (ExpiredJwtException ex) {
-            log.error("❌ Token expired while extracting role", ex);
+            log.error("❌ Token expired while extracting role");
             throw new RuntimeException("Token expired", ex);
         } catch (JwtException ex) {
-            log.error("❌ Invalid token while extracting role", ex);
+            log.error("❌ Invalid token while extracting role: {}", ex.getMessage());
             throw new RuntimeException("Invalid token", ex);
         } catch (Exception ex) {
-            log.error("❌ Failed to decrypt token", ex);
+            log.error("❌ Failed to decrypt token for role extraction: {}", ex.getMessage(), ex);
             throw new RuntimeException("Invalid or corrupted token", ex);
         }
     }
@@ -269,6 +313,8 @@ public class TokenService {
      */
     public String refreshAccessToken(String encryptedRefreshToken) {
         try {
+            log.info("🔄 Refreshing access token");
+
             // Step 1: Validate refresh token
             validateRefreshToken(encryptedRefreshToken);
 
@@ -277,6 +323,7 @@ public class TokenService {
                     .orElseThrow(() -> new RuntimeException("Refresh token not found"));
 
             User user = refreshToken.getUser();
+            log.debug("Refresh token belongs to user: {}", user.getEmail());
 
             // Step 3: Generate new encrypted access token
             String newAccessToken = generateAccessToken(user);
@@ -285,7 +332,7 @@ public class TokenService {
             return newAccessToken;
 
         } catch (Exception ex) {
-            log.error("❌ Failed to refresh access token", ex);
+            log.error("❌ Failed to refresh access token: {}", ex.getMessage());
             throw new RuntimeException("Failed to refresh token", ex);
         }
     }
@@ -297,13 +344,15 @@ public class TokenService {
      */
     public void revokeRefreshToken(String encryptedRefreshToken) {
         try {
+            log.info("🗑️ Revoking refresh token");
+
             refreshTokenRepo.findByToken(encryptedRefreshToken)
                     .ifPresent(token -> {
                         refreshTokenRepo.delete(token);
                         log.info("🗑️ Refresh token revoked for user: {}", token.getUser().getEmail());
                     });
         } catch (Exception ex) {
-            log.error("❌ Failed to revoke refresh token", ex);
+            log.error("❌ Failed to revoke refresh token: {}", ex.getMessage());
             throw new RuntimeException("Failed to revoke token", ex);
         }
     }
@@ -313,12 +362,14 @@ public class TokenService {
      */
     public void revokeAllUserRefreshTokens(User user) {
         try {
+            log.info("🗑️ Revoking all refresh tokens for user: {}", user.getEmail());
+
             refreshTokenRepo.findByUser(user).ifPresent(token -> {
                 refreshTokenRepo.delete(token);
                 log.info("🗑️ All refresh tokens revoked for user: {}", user.getEmail());
             });
         } catch (Exception ex) {
-            log.error("❌ Failed to revoke user refresh tokens", ex);
+            log.error("❌ Failed to revoke user refresh tokens: {}", ex.getMessage());
             throw new RuntimeException("Failed to revoke tokens", ex);
         }
     }
@@ -330,6 +381,8 @@ public class TokenService {
      */
     public boolean isTokenExpired(String encryptedToken) {
         try {
+            log.debug("🔍 Checking if token is expired");
+
             String plainToken = encryptionService.decryptToken(encryptedToken);
 
             Claims claims = Jwts.parserBuilder()
@@ -338,12 +391,16 @@ public class TokenService {
                     .parseClaimsJws(plainToken)
                     .getBody();
 
-            return claims.getExpiration().before(new Date());
+            boolean isExpired = claims.getExpiration().before(new Date());
+            log.debug("Token expired: {}", isExpired);
+
+            return isExpired;
 
         } catch (ExpiredJwtException ex) {
+            log.debug("Token is expired");
             return true;
         } catch (Exception ex) {
-            log.error("❌ Failed to check token expiration", ex);
+            log.error("❌ Failed to check token expiration: {}", ex.getMessage());
             return true;
         }
     }
@@ -353,6 +410,8 @@ public class TokenService {
      */
     public long getTokenExpirationTime(String encryptedToken) {
         try {
+            log.debug("🔍 Getting token expiration time");
+
             String plainToken = encryptionService.decryptToken(encryptedToken);
 
             Claims claims = Jwts.parserBuilder()
@@ -364,10 +423,12 @@ public class TokenService {
             Date expiration = claims.getExpiration();
             long remainingTime = expiration.getTime() - System.currentTimeMillis();
 
+            log.debug("Token expires in {} milliseconds", remainingTime);
+
             return Math.max(0, remainingTime);
 
         } catch (Exception ex) {
-            log.error("❌ Failed to get token expiration time", ex);
+            log.error("❌ Failed to get token expiration time: {}", ex.getMessage());
             return 0;
         }
     }

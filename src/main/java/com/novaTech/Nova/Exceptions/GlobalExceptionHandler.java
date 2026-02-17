@@ -3,6 +3,7 @@ package com.novaTech.Nova.Exceptions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -33,6 +34,27 @@ public class GlobalExceptionHandler {
             IllegalArgumentException e) {
         log.error("Invalid argument", e);
         return buildErrorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> handleJsonParseException(HttpMessageNotReadableException ex) {
+        log.error("JSON parsing error: {}", ex.getMessage());
+
+        String message = "Invalid request format. ";
+
+        if (ex.getMessage().contains("LocalDate")) {
+            message += "Date fields must be in YYYY-MM-DD format (e.g., 2026-02-15).";
+        } else if (ex.getMessage().contains("numeric value")) {
+            message += "Please check that all numeric fields contain valid numbers.";
+        } else {
+            message += "Please check your request body format.";
+        }
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", "Invalid Request",
+                "message", message,
+                "details", ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage()
+        ));
     }
 
     // Handle validation errors

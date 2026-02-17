@@ -35,7 +35,8 @@ public class SecurityConfig {
     public SecurityConfig(TokenService tokenService,
                           UserRepo userRepo,
                           CustomOAuth2UserService customOAuth2UserService,
-                          OncePerRequestFilterService oncePerRequestFilterService, RateLimitFilter rateLimitFilter) {
+                          OncePerRequestFilterService oncePerRequestFilterService,
+                          RateLimitFilter rateLimitFilter) {
         this.tokenService = tokenService;
         this.userRepo = userRepo;
         this.customOAuth2UserService = customOAuth2UserService;
@@ -49,14 +50,12 @@ public class SecurityConfig {
                 .cors(cors -> {})
                 .csrf(csrf -> csrf.disable())
 
-                // ✅ IF_REQUIRED lets Spring briefly create a session for OAuth2 state param
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
                 )
 
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                // Auth endpoints
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/login-mfa",
@@ -64,36 +63,29 @@ public class SecurityConfig {
                                 "/api/auth/generate-mfa",
                                 "/api/auth/view-mfa",
                                 "/api/auth/mfa-code",
-                                // ✅ Spring Security OAuth2 internal paths
                                 "/oauth2/**",
                                 "/login",
                                 "/login/**",
-                                // ✅ Your OAuthController trigger endpoints
                                 "/api/oauth2/**",
-                                // Other public
                                 "/api/test/**",
-                                "/api/v1/external/**",
-                                "/api/v1/ai/**",
                                 "/api/auth/refresh",
                                 "/error",
                                 "/error/**",
                                 "/actuator/**",
                                 "/ws-meeting/**",
                                 "/ws/**",
-                                "/favicon.ico",  // ✅ FIXED: removed /** wildcard
-                                "/assets/**",     // ✅ FIXED: also fixed typo "assests" → "assets"
+                                "/favicon.ico",
+                                "/assets/**",
                                 "/.well-known/**"
                         ).permitAll()
                         .requestMatchers("/api/meetings/join/guest").permitAll()
                         .requestMatchers("/api/meetings/validate/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/meetings/{meetingCode}").permitAll()
-                        // All other meeting endpoints require authentication
                         .requestMatchers("/api/meetings/**").authenticated()
                         .requestMatchers("/api/v1/chat/**").authenticated()
                         .anyRequest().authenticated()
                 )
 
-                // ✅ Returns JSON 401 instead of redirecting to /login
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, authException) -> {
                             log.warn("🚫 [AUTH] Unauthorized: {} {}", request.getMethod(), request.getRequestURI());
@@ -115,8 +107,6 @@ public class SecurityConfig {
 
                 .oauth2Login(oauth2 -> oauth2
                         .authorizationEndpoint(auth -> auth
-                                // ✅ Store OAuth2 state in cookie instead of session
-                                // Fixes: authorization_request_not_found / invalid session id
                                 .authorizationRequestRepository(authorizationRequestRepository())
                         )
                         .userInfoEndpoint(userInfo ->
@@ -129,7 +119,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    // ✅ Replace the old cookie-based bean with this
     @Bean
     public AuthorizationRequestRepository<OAuth2AuthorizationRequest> authorizationRequestRepository() {
         return new InMemoryOAuth2AuthorizationRequestRepository();
@@ -149,11 +138,8 @@ public class SecurityConfig {
             User user = userRepo.findByEmail(email)
                     .orElseThrow(() -> new RuntimeException("User not found after OAuth2 login"));
 
-            // ✅ Generate ENCRYPTED tokens
             String encryptedAccessToken = tokenService.generateAccessToken(user);
             String encryptedRefreshToken = tokenService.generateRefreshToken(user).getToken();
-
-            log.info("✅ [OAUTH2] User {} logged in successfully", user.getEmail());
 
             log.info("✅ [OAUTH2] User {} logged in successfully", user.getEmail());
 

@@ -19,7 +19,6 @@ import java.util.Map;
 @Service
 public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
 
-    // ✅ Inject API key and model names from environment variables
     @Value("${huggingface.api.key}")
     private String apiKey;
 
@@ -55,44 +54,37 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
     public AiModelResponse summarize(String text) throws Exception {
         log.info("Summarizing text. Original length: {}", text != null ? text.length() : 0);
 
-        // ✅ More aggressive truncation for faster processing
-        String textToSummarize = truncateText(text, 800); // Reduced from 1024
+        String textToSummarize = truncateText(text, 800);
         log.debug("Text length after truncation: {}", textToSummarize.length());
 
+        // Use OpenAI-compatible format for the router
+        Map<String, Object> message = new HashMap<>();
+        message.put("role", "user");
+        message.put("content", "Summarize the following text concisely in 2-3 sentences:\n\n" + textToSummarize);
+
         Map<String, Object> payload = new HashMap<>();
-        payload.put("inputs", textToSummarize);
+        payload.put("model", summarizationModel);
+        payload.put("messages", new Object[]{message});
+        payload.put("max_tokens", 200);
+        payload.put("temperature", 0.3);
 
-        Map<String, Object> parameters = new HashMap<>();
-        parameters.put("max_length", 130);
-        parameters.put("min_length", 40);
-        parameters.put("do_sample", false);
-        payload.put("parameters", parameters);
-
-        String endpoint = "/hf-inference/models/" + summarizationModel;
+        String endpoint = "/v1/chat/completions";
 
         try {
-            String response = makeApiCall(endpoint, payload, 90); // Increased timeout to 90s
+            String response = makeApiCall(endpoint, payload, 90);
             log.debug("Received response from summarization model: {}", response);
 
             JsonNode rootNode = objectMapper.readTree(response);
             String summary;
 
-            if (rootNode.isArray() && rootNode.size() > 0) {
-                JsonNode firstResult = rootNode.get(0);
-                summary = firstResult.has("summary_text")
-                        ? firstResult.get("summary_text").asText()
-                        : firstResult.has("generated_text")
-                        ? firstResult.get("generated_text").asText()
-                        : null;
-            } else if (rootNode.has("summary_text")) {
-                summary = rootNode.get("summary_text").asText();
-            } else if (rootNode.has("generated_text")) {
-                summary = rootNode.get("generated_text").asText();
+            if (rootNode.has("choices") && rootNode.get("choices").isArray() && rootNode.get("choices").size() > 0) {
+                JsonNode firstChoice = rootNode.get("choices").get(0);
+                summary = firstChoice.get("message").get("content").asText();
             } else {
+                log.warn("Unexpected response format");
                 summary = null;
             }
 
-            // ✅ Fallback if summarization fails
             if (summary == null || summary.trim().isEmpty()) {
                 log.warn("Summarization returned empty result, using extractive summary");
                 summary = createExtractiveSummary(text);
@@ -107,7 +99,6 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
 
         } catch (Exception e) {
             log.error("Summarization failed, falling back to extractive summary: {}", e.getMessage());
-            // ✅ Fallback to simple extractive summary
             String fallbackSummary = createExtractiveSummary(text);
             return AiModelResponse.builder()
                     .response(fallbackSummary + " (Auto-generated summary - AI model unavailable)")
@@ -120,18 +111,23 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
     public AiModelResponse answerQuestion(String question, String context) throws Exception {
         log.info("Answering question: {}", question);
 
-        // ✅ Better context preparation - extract relevant sentences
         String relevantContext = extractRelevantContext(question, context, 400);
         log.debug("Relevant context length: {}", relevantContext.length());
 
-        Map<String, Object> inputs = new HashMap<>();
-        inputs.put("question", question);
-        inputs.put("context", relevantContext);
+        // Use OpenAI-compatible format
+        String prompt = String.format("Context: %s\n\nQuestion: %s\n\nAnswer:", relevantContext, question);
+
+        Map<String, Object> message = new HashMap<>();
+        message.put("role", "user");
+        message.put("content", prompt);
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("inputs", inputs);
+        payload.put("model", qaModel);
+        payload.put("messages", new Object[]{message});
+        payload.put("max_tokens", 150);
+        payload.put("temperature", 0.1);
 
-        String endpoint = "/hf-inference/models/" + qaModel;
+        String endpoint = "/v1/chat/completions";
         String response = makeApiCall(endpoint, payload, 30);
 
         log.debug("Received response from QA model: {}", response);
@@ -139,36 +135,19 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
         JsonNode rootNode = objectMapper.readTree(response);
 
         String answer;
-        double score;
-
-        if (rootNode.has("answer")) {
-            answer = rootNode.get("answer").asText();
-            score = rootNode.has("score") ? rootNode.get("score").asDouble() : 0.0;
-        } else if (rootNode.isArray() && rootNode.size() > 0) {
-            JsonNode firstAnswer = rootNode.get(0);
-            answer = firstAnswer.get("answer").asText();
-            score = firstAnswer.has("score") ? firstAnswer.get("score").asDouble() : 0.0;
+        if (rootNode.has("choices") && rootNode.get("choices").isArray() && rootNode.get("choices").size() > 0) {
+            JsonNode firstChoice = rootNode.get("choices").get(0);
+            answer = firstChoice.get("message").get("content").asText();
         } else {
             log.warn("QA model couldn't find answer in context");
             answer = "No clear answer found in the document.";
-            score = 0.0;
         }
 
-        log.info("QA completed. Answer: '{}', Confidence score: {}", answer, score);
-
-        // ✅ Better confidence threshold and formatting
-        String formattedAnswer;
-        if (score < 0.01) { // Less than 1%
-            formattedAnswer = answer + " (Low confidence - answer may not be accurate)";
-        } else if (score < 0.3) { // Less than 30%
-            formattedAnswer = String.format("%s (Confidence: %.1f%%)", answer, score * 100);
-        } else {
-            formattedAnswer = answer; // High confidence, no need to show score
-        }
+        log.info("QA completed. Answer: '{}'", answer);
 
         return AiModelResponse.builder()
-                .response(formattedAnswer)
-                .confidenceScore(score)
+                .response(answer)
+                .confidenceScore(0.8)
                 .modelUsed(qaModel)
                 .build();
     }
@@ -187,6 +166,7 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
                 prompt
         );
 
+        // ✅ FIXED: Use OpenAI-compatible format for HuggingFace Router
         Map<String, Object> message = new HashMap<>();
         message.put("role", "user");
         message.put("content", userMessage);
@@ -198,7 +178,9 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
         payload.put("temperature", 0.7);
         payload.put("stream", false);
 
-        String response = makeApiCall("/v1/chat/completions", payload, 45);
+        // ✅ FIXED: Use /v1/chat/completions endpoint
+        String endpoint = "/v1/chat/completions";
+        String response = makeApiCall(endpoint, payload, 45);
 
         log.debug("Received response from chat model");
 
@@ -230,6 +212,7 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
 
         String analysisPrompt = buildMultiFeaturePrompt(truncatedText, additionalPrompt);
 
+        // ✅ FIXED: Use OpenAI-compatible format
         Map<String, Object> message = new HashMap<>();
         message.put("role", "user");
         message.put("content", analysisPrompt);
@@ -241,7 +224,8 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
         payload.put("temperature", 0.7);
         payload.put("stream", false);
 
-        String response = makeApiCall("/v1/chat/completions", payload, 60);
+        String endpoint = "/v1/chat/completions";
+        String response = makeApiCall(endpoint, payload, 60);
 
         log.debug("Received response from analysis model");
 
@@ -293,20 +277,16 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
         }
     }
 
-    // ✅ Helper method to create extractive summary as fallback
     private String createExtractiveSummary(String text) {
         if (text == null || text.trim().isEmpty()) {
             return "No content to summarize.";
         }
 
-        // Split into sentences
         String[] sentences = text.split("\\. ");
-
-        // Take first 3-4 sentences that are substantial
         StringBuilder summary = new StringBuilder();
         int count = 0;
         for (String sentence : sentences) {
-            if (sentence.length() > 20 && count < 4) { // Skip very short sentences
+            if (sentence.length() > 20 && count < 4) {
                 summary.append(sentence.trim()).append(". ");
                 count++;
             }
@@ -314,27 +294,21 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
 
         String result = summary.toString().trim();
         if (result.isEmpty()) {
-            // Fallback: just take first 200 characters
             result = text.substring(0, Math.min(200, text.length())) + "...";
         }
 
         return result;
     }
 
-    // ✅ Helper method to extract relevant context for Q&A
     private String extractRelevantContext(String question, String context, int maxWords) {
         if (context == null || context.isEmpty()) {
             return context;
         }
 
-        // Convert question to lowercase for matching
         String lowerQuestion = question.toLowerCase();
         String[] questionWords = lowerQuestion.split("\\s+");
-
-        // Split context into sentences
         String[] sentences = context.split("[.!?]\\s+");
 
-        // Score each sentence based on keyword overlap
         Map<String, Double> sentenceScores = new HashMap<>();
         for (String sentence : sentences) {
             String lowerSentence = sentence.toLowerCase();
@@ -351,21 +325,18 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
             }
         }
 
-        // If no relevant sentences found, just truncate
         if (sentenceScores.isEmpty()) {
             return truncateText(context, maxWords);
         }
 
-        // Sort sentences by score and take top ones
         StringBuilder relevantContext = new StringBuilder();
         sentenceScores.entrySet().stream()
                 .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
-                .limit(5) // Top 5 most relevant sentences
+                .limit(5)
                 .forEach(entry -> relevantContext.append(entry.getKey()).append(". "));
 
         String result = relevantContext.toString();
 
-        // If still too long, truncate
         if (result.split("\\s+").length > maxWords) {
             return truncateText(result, maxWords);
         }

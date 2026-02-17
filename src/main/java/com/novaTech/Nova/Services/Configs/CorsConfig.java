@@ -23,7 +23,9 @@ public class CorsConfig {
                 "http://localhost:3000",
                 "https://*.ngrok-free.dev",
                 "https://cyril-dot.github.io",
-                "http://127.0.0.1:5500"
+                "http://127.0.0.1:5500",
+                "http://localhost:8081",
+                "http://192.168.8.127:8081"
         ));
 
         // Allowed methods

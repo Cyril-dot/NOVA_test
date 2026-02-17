@@ -28,7 +28,8 @@ public class WorkSpaceDocs {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Lob
+    // AFTER (fixed)
+    @Column(name = "work_space_data", columnDefinition = "bytea")
     private byte[] workSpaceData;
 
     @CreationTimestamp

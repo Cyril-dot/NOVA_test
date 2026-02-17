@@ -25,9 +25,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.UUID;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -313,10 +311,16 @@ public class UserWorkSpace {
     }
 
     private ViewWorkSpaceDocsData docsBuilder(WorkSpaceDocs spaceDocs){
+        // ✅ NULL CHECK ADDED
+        String content = "";
+        if (spaceDocs.getWorkSpaceData() != null) {
+            content = new String(spaceDocs.getWorkSpaceData(), StandardCharsets.UTF_8);
+        }
+
         return new ViewWorkSpaceDocsData(
                 spaceDocs.getTitle(),
                 spaceDocs.getDescription(),
-                new String(spaceDocs.getWorkSpaceData(), StandardCharsets.UTF_8)
+                content
         );
     }
 
@@ -522,6 +526,13 @@ public class UserWorkSpace {
             log.info("User with id {} does not belong to the user", document.getUser().getId());
             throw new UnauthorizedException("Authorized access, this resource does not belong to user with id {}");
         }
+
+        // ✅ NULL CHECK ADDED
+        if (document.getWorkSpaceData() == null) {
+            log.error("Workspace with id {} has no data", docId);
+            throw new RuntimeException("Workspace has no content to download");
+        }
+
         String mimeType = document.getDocType().getMimeType();
         String extension = document.getDocType().getExtension();
         String fileName = document.getTitle() + extension;
@@ -702,8 +713,11 @@ public class UserWorkSpace {
             throw new UnauthorizedException("You are not authorized to update this workspace");
         }
 
-        // Read the existing full document from the DB
-        String existingFullDocument = new String(docs.getWorkSpaceData(), StandardCharsets.UTF_8);
+        // ✅ NULL CHECK ADDED
+        String existingFullDocument = "";
+        if (docs.getWorkSpaceData() != null) {
+            existingFullDocument = new String(docs.getWorkSpaceData(), StandardCharsets.UTF_8);
+        }
 
         // Inject the new content into the correct position within the existing document
         String updatedDocument = updateContentWithinTemplate(existingFullDocument, updateDto.content(), docs.getDocType());
@@ -736,6 +750,8 @@ public class UserWorkSpace {
         // Filter docs belonging to the user
         List<WorkSpaceDocs> userDocs = docs.stream()
                 .filter(doc -> doc.getUser().getId().equals(user.getId()))
+                // ✅ NULL CHECK ADDED - Filter out docs with null data
+                .filter(doc -> doc.getWorkSpaceData() != null)
                 .toList();
 
         if (userDocs.isEmpty()) {
@@ -799,6 +815,8 @@ public class UserWorkSpace {
 
     private List<UserWorkSpaceDocs> docsViewByType(List<WorkSpaceDocs> docs){
         return docs.stream()
+                // ✅ NULL CHECK ADDED - Filter out docs with null data
+                .filter(doc -> doc.getWorkSpaceData() != null)
                 .map(doc -> new UserWorkSpaceDocs(
                         doc.getId(),
                         doc.getTitle(),
@@ -806,7 +824,7 @@ public class UserWorkSpace {
                         new String(doc.getWorkSpaceData(), StandardCharsets.UTF_8),
                         doc.getUser().getUsername()
                 ))
-                .collect(Collectors.toList()); // This was missing
+                .collect(Collectors.toList());
     }
 
     // to search for workspace docs , general search

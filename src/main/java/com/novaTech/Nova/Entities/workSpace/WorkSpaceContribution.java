@@ -26,7 +26,7 @@ public class WorkSpaceContribution {
     @JoinColumn(name = "contributor_id", nullable = false)
     private User contributor;
 
-    @Lob
+    @Column(columnDefinition = "bytea")
     private byte[] contributionData;
 
     private LocalDateTime submittedAt;

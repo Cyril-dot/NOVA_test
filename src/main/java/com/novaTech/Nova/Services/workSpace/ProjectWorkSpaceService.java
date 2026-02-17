@@ -359,14 +359,19 @@ public class ProjectWorkSpaceService {
     }
 
     private ViewProjectWorkSpaceDocs projectDocsBuilder(WorkSpaceDocs spaceDocs){
+        // ✅ NULL CHECK ADDED
+        String content = "";
+        if (spaceDocs.getWorkSpaceData() != null) {
+            content = new String(spaceDocs.getWorkSpaceData(), StandardCharsets.UTF_8);
+        }
+
         return new ViewProjectWorkSpaceDocs(
                 spaceDocs.getTitle(),
                 spaceDocs.getDescription(),
-                new String(spaceDocs.getWorkSpaceData(), StandardCharsets.UTF_8),
+                content,
                 spaceDocs.getProject().getTitle()
         );
     }
-
 
     public ActiveProjectWorkSpaceDocs workInSpaceDocs(UUID userId, Long docId, UpdateWorkSpaceDocsDto updateDto, UUID projectId){
         User user = getUserById(userId);
@@ -913,6 +918,8 @@ public class ProjectWorkSpaceService {
 
     private List<ProjectWorkSpaceDocs> docsViewByType(List<WorkSpaceDocs> docs){
         return docs.stream()
+                // ✅ NULL CHECK ADDED
+                .filter(doc -> doc.getWorkSpaceData() != null)
                 .map(doc -> new ProjectWorkSpaceDocs(
                         doc.getId(),
                         doc.getTitle(),
@@ -921,7 +928,7 @@ public class ProjectWorkSpaceService {
                         doc.getDocType(),
                         doc.getProject().getTitle()
                 ))
-                .collect(Collectors.toList()); // This was missing
+                .collect(Collectors.toList());
     }
 
 
@@ -1616,6 +1623,8 @@ public class ProjectWorkSpaceService {
 
     private List<ProjectDocumentWorkSpaceDocs> projectDocView(List<WorkSpaceDocs> docs){
         return docs.stream()
+                // ✅ NULL CHECK ADDED
+                .filter(doc -> doc.getWorkSpaceData() != null)
                 .map(doc -> new ProjectDocumentWorkSpaceDocs(
                         doc.getId(),
                         doc.getTitle(),

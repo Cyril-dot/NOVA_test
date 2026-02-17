@@ -63,7 +63,7 @@ public class DocumentController {
     /**
      * Upload document only (without AI processing)
      */
-    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = "/upload", consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
     public ResponseEntity<DocumentUploadResponse> uploadDocument(@RequestPart("file") MultipartFile file) {
 
         UserPrincipal principal = userPrincipal();
@@ -98,7 +98,7 @@ public class DocumentController {
     /**
      * Upload and process document in one call (NotebookLM-style)
      */
-    @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(value = "/process",consumes = {MediaType.MULTIPART_FORM_DATA_VALUE, MediaType.APPLICATION_JSON_VALUE})
     public ResponseEntity<DocumentProcessResponse> processDocument(
             @RequestPart("file") MultipartFile file,
             @RequestParam("functionality") FunctionalityType functionality,

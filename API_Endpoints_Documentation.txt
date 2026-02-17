@@ -2116,7 +2116,108 @@ This document outlines all available API endpoints, their purpose, and how to te
 
 ---
 
-## 13. Rate Limiting (Admin) (`/api/admin/rate-limit`)
+## 13. Meetings (`/api/meetings`)
+
+### 13.1 Create Meeting
+- **Endpoint**: `POST /api/meetings/create`
+- **Description**: Create a new video meeting.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/meetings/create`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "title": "Weekly Sync",
+        "description": "Team sync meeting",
+        "scheduledTime": "2024-11-01T10:00:00",
+        "durationMinutes": 60,
+        "requiresPassword": true,
+        "password": "secure123",
+        "allowGuests": true,
+        "maxParticipants": 10
+    }
+    ```
+- **Expected Response (200 OK)**: `MeetingResponseDTO`
+
+### 13.2 Start Meeting
+- **Endpoint**: `POST /api/meetings/start/{meetingCode}`
+- **Description**: Start a scheduled meeting (Host only).
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/meetings/start/abc-def-ghi`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `MeetingResponseDTO`
+
+### 13.3 Join Meeting (User)
+- **Endpoint**: `POST /api/meetings/join`
+- **Description**: Join a meeting as an authenticated user.
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/meetings/join`
+  - **Headers**: `Authorization: Bearer <your_token>`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "meetingCode": "abc-def-ghi",
+        "password": "secure123"
+    }
+    ```
+- **Expected Response (200 OK)**: `MeetingResponseDTO`
+
+### 13.4 Join Meeting (Guest)
+- **Endpoint**: `POST /api/meetings/join/guest`
+- **Description**: Join a meeting as a guest (no auth required).
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/meetings/join/guest`
+  - **Body**: `raw (JSON)`
+    ```json
+    {
+        "meetingCode": "abc-def-ghi",
+        "guestName": "Guest User",
+        "password": "secure123"
+    }
+    ```
+- **Expected Response (200 OK)**: `MeetingResponseDTO`
+
+### 13.5 End Meeting
+- **Endpoint**: `POST /api/meetings/end/{meetingCode}`
+- **Description**: End a meeting for everyone (Host only).
+- **Postman**:
+  - **Method**: `POST`
+  - **URL**: `{{base_url}}/api/meetings/end/abc-def-ghi`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: Success message
+
+### 13.6 Get Meeting Details
+- **Endpoint**: `GET /api/meetings/{meetingCode}`
+- **Description**: Get public details of a meeting.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/meetings/abc-def-ghi`
+- **Expected Response (200 OK)**: `MeetingResponseDTO`
+
+### 13.7 Get My Meetings
+- **Endpoint**: `GET /api/meetings/my-meetings`
+- **Description**: Get all meetings created by or joined by the user.
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/meetings/my-meetings?status=SCHEDULED`
+  - **Headers**: `Authorization: Bearer <your_token>`
+- **Expected Response (200 OK)**: `List<MeetingResponseDTO>`
+
+### 13.8 Validate Meeting Code
+- **Endpoint**: `GET /api/meetings/validate/{meetingCode}`
+- **Description**: Check if a meeting code is valid and get basic info (for pre-join screen).
+- **Postman**:
+  - **Method**: `GET`
+  - **URL**: `{{base_url}}/api/meetings/validate/abc-def-ghi`
+- **Expected Response (200 OK)**: `{ "valid": true, "requiresPassword": true, ... }`
+
+---
+
+## 14. Rate Limiting (Admin) (`/api/admin/rate-limit`)
 
 - **Get Stats**: `GET /api/admin/rate-limit/stats`
 - **Clear Cache**: `DELETE /api/admin/rate-limit/cache`
@@ -2125,16 +2226,16 @@ This document outlines all available API endpoints, their purpose, and how to te
 
 ---
 
-## 14. Static Resources
+## 15. Static Resources
 
 - **Favicon**: `GET /favicon.ico`
 - **Chrome DevTools**: `GET /.well-known/appspecific/com.chrome.devtools.json`
 
 ---
 
-## 15. Test (`/api/test`)
+## 16. Test (`/api/test`)
 
-### 15.1 Say Hello
+### 16.1 Say Hello
 - **Endpoint**: `GET /api/test/hello`
 - **Description**: Returns a simple plain text message.
 - **Postman**:
@@ -2145,7 +2246,7 @@ This document outlines all available API endpoints, their purpose, and how to te
   Hello from Test Controller!
   ```
 
-### 15.2 Get Simple Message
+### 16.2 Get Simple Message
 - **Endpoint**: `GET /api/test/message`
 - **Description**: Returns a simple JSON message.
 - **Postman**:

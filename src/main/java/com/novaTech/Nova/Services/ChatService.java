@@ -41,12 +41,17 @@ public class ChatService {
 
     /**
      * Process a chat message - creates chat if needed, saves messages, gets AI response
+     *
+     * FIX: Replaced #result.chatId (evaluated against the Mono wrapper, not the resolved value)
+     *      with #request.chatId (the input parameter), which is safely available at annotation
+     *      evaluation time. The user-chats eviction covers cache freshness for new chats where
+     *      chatId is null.
      */
     @Transactional
     @Caching(evict = {
             @CacheEvict(key = "'user:' + #user.id + '_chats'"),
-            @CacheEvict(key = "'chat:' + #result.chatId", condition = "#result != null"),
-            @CacheEvict(key = "'chat:' + #result.chatId + '_history'", condition = "#result != null")
+            @CacheEvict(key = "'chat:' + #request.chatId", condition = "#request.chatId != null"),
+            @CacheEvict(key = "'chat:' + #request.chatId + '_history'", condition = "#request.chatId != null")
     })
     public Mono<ChatResponse> processMessage(ChatRequest request, User user) {
         log.info("Processing message for user: {}", user.getId());
@@ -108,7 +113,6 @@ public class ChatService {
             });
 
         } else if (request.getModel() == Model.SEARCH) {
-            // NEW: Handle SEARCH model - calls generateSearch()
             return Mono.fromSupplier(() -> {
                 // Generate search results using SearchService
                 String searchResults = searchService.generateSearch(request.getMessage());
@@ -156,6 +160,7 @@ public class ChatService {
 
     /**
      * Process a chat message with STREAMING
+     * (Cache evictions were already correct here — no changes needed)
      */
     @Transactional
     @Caching(evict = {
@@ -217,7 +222,6 @@ public class ChatService {
                     });
 
         } else if (request.getModel() == Model.SEARCH) {
-            // NEW: Handle SEARCH model streaming - calls generateSearchStream()
             StringBuilder searchResponse = new StringBuilder();
 
             return searchService.generateSearchStream(request.getMessage())

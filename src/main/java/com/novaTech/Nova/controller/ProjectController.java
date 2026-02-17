@@ -3,11 +3,10 @@ package com.novaTech.Nova.controller;
 import com.novaTech.Nova.DTO.*;
 import com.novaTech.Nova.Entities.Enums.DocumentType;
 import com.novaTech.Nova.Entities.Enums.ProjectStatus;
-import com.novaTech.Nova.Entities.User;
 import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.DocumentViewService;
 import com.novaTech.Nova.Services.ProjectService;
-import com.novaTech.Nova.Services.UserRegistrationService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,29 +53,43 @@ public class ProjectController {
 
 
     // ========================
-    // CREATE PROJECT
+    // CREATE PROJECT (MULTIPART - with or without files)
     // ========================
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> createProject(
-            @ModelAttribute ProjectCreateDTO projectDto,
-            @RequestParam(value = "documents", required = false) List<MultipartFile> documents
+            @Valid @ModelAttribute ProjectCreateDTO projectDto
     ) {
         try {
             UserPrincipal principal = userPrincipal();
             UUID userId = principal.getUserId();
 
-            // Rebuild DTO with documents included
-            ProjectCreateDTO dto = ProjectCreateDTO.builder()
-                    .title(projectDto.getTitle())
-                    .description(projectDto.getDescription())
-                    .startDate(projectDto.getStartDate())
-                    .endDate(projectDto.getEndDate())
-                    .status(projectDto.getStatus())
-                    .documents(documents)
-                    .documentDescription(projectDto.getDocumentDescription())
-                    .build();
+            ProjectResponseDTO response = projectService.createProject(userId, projectDto);
 
-            ProjectResponseDTO response = projectService.createProject(userId, dto);
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                    "message", "Project created successfully",
+                    "project", response
+            ));
+
+        } catch (RuntimeException | IOException e) {
+            log.error("Error creating project: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", e.getMessage()
+            ));
+        }
+    }
+
+    // ========================
+    // CREATE PROJECT (JSON - without files)
+    // ========================
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> createProjectJson(
+            @Valid @RequestBody ProjectCreateDTO projectDto
+    ) {
+        try {
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
+
+            ProjectResponseDTO response = projectService.createProject(userId, projectDto);
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "message", "Project created successfully",
@@ -94,29 +106,45 @@ public class ProjectController {
 
 
     // ========================
-// UPDATE PROJECT
-// ========================
+    // UPDATE PROJECT (MULTIPART - with or without files)
+    // ========================
     @PutMapping(value = "/{projectId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> updateProject(
             @PathVariable UUID projectId,
-            @ModelAttribute ProjectUpdateDTO projectDto,
-            @RequestParam(value = "documents", required = false) List<MultipartFile> documents
+            @Valid @ModelAttribute ProjectUpdateDTO projectDto
     ) {
         try {
             UserPrincipal principal = userPrincipal();
             UUID userId = principal.getUserId();
 
-            ProjectUpdateDTO dto = ProjectUpdateDTO.builder()
-                    .title(projectDto.getTitle())
-                    .description(projectDto.getDescription())
-                    .startDate(projectDto.getStartDate())
-                    .endDate(projectDto.getEndDate())
-                    .status(projectDto.getStatus())
-                    .documents(documents)
-                    .documentDescription(projectDto.getDocumentDescription())
-                    .build();
+            ProjectResponseDTO response = projectService.updateProject(projectId, userId, projectDto);
 
-            ProjectResponseDTO response = projectService.updateProject(projectId, userId, dto);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Project updated successfully",
+                    "project", response
+            ));
+
+        } catch (RuntimeException | IOException e) {
+            log.error("Error updating project: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", e.getMessage()
+            ));
+        }
+    }
+
+    // ========================
+    // UPDATE PROJECT (JSON - without files)
+    // ========================
+    @PutMapping(value = "/{projectId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> updateProjectJson(
+            @PathVariable UUID projectId,
+            @Valid @RequestBody ProjectUpdateDTO projectDto
+    ) {
+        try {
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
+
+            ProjectResponseDTO response = projectService.updateProject(projectId, userId, projectDto);
 
             return ResponseEntity.ok(Map.of(
                     "message", "Project updated successfully",
@@ -270,7 +298,7 @@ public class ProjectController {
         ));
     }
 
-    // to view most prjects according to most recent
+    // to view most projects according to most recent
     @GetMapping("/projects/ordered")
     public ResponseEntity<?> getProjectOrders(){
         UserPrincipal principal = userPrincipal();
@@ -284,9 +312,6 @@ public class ProjectController {
     }
 
 
-
-
-
     // ========================
     // DOWNLOAD DOCUMENT
     // ========================
@@ -294,8 +319,8 @@ public class ProjectController {
     public ResponseEntity<byte[]> downloadDocument(
             @PathVariable UUID documentId) {
         try {
-           UserPrincipal principal = userPrincipal();
-           UUID userId = principal.getUserId();
+            UserPrincipal principal = userPrincipal();
+            UUID userId = principal.getUserId();
 
             byte[] documentBytes = documentViewService.getDocumentContent(documentId, userId);
 

@@ -2,15 +2,12 @@ package com.novaTech.Nova.controller;
 
 import com.novaTech.Nova.DTO.*;
 import com.novaTech.Nova.Entities.Enums.TeamStatus;
-import com.novaTech.Nova.Entities.User;
 import com.novaTech.Nova.Security.UserPrincipal;
 import com.novaTech.Nova.Services.ProjectService;
 import com.novaTech.Nova.Services.TaskService;
-import com.novaTech.Nova.Services.UserRegistrationService;
 import com.novaTech.Nova.Services.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -22,17 +19,20 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/dashboard")
+@RequestMapping("/api/v1/dashboard") // FIX: consistent versioning with /api/v1/
 @RequiredArgsConstructor
 @Slf4j
 public class DashboardController {
 
     private final ProjectService projectService;
     private final TaskService taskService;
-    private final UserRegistrationService userRegistrationService;
     private final UserService userService;
+    // FIX: removed UserRegistrationService - no longer needed in controller
 
-    private UserPrincipal userPrincipal(){
+    // ==================== UTILITY METHOD ====================
+
+    // FIX: shared helper - same pattern as TeamBasedController
+    private UserPrincipal userPrincipal() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null) {
@@ -49,32 +49,26 @@ public class DashboardController {
 
         UserPrincipal userPrincipal = (UserPrincipal) principal;
         log.debug("Successfully retrieved UserPrincipal for user: {} (ID: {})",
-                userPrincipal.getEmail(), userPrincipal.getUserId());
+                userPrincipal.getUsername(), userPrincipal.getUserId());
 
         return userPrincipal;
     }
 
+    // ==================== DASHBOARD STATS ====================
 
     @GetMapping("/stats")
     public ResponseEntity<?> getDashboardStats() {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
+            // FIX: get userId directly from principal - no DB lookup needed
+            UUID userId = userPrincipal().getUserId();
 
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                log.error("User not found for username: {}", username);
-                throw new RuntimeException("User not found for username: " + username);
-            }
+            long totalProjects = projectService.getProjectCount(userId);
+            long completedProjects = projectService.getCompletedProjectCount(userId);
+            long inProgressProjects = projectService.getInProgressProjectCount(userId);
 
-
-            long totalProjects = projectService.getProjectCount(user.getId());
-            long completedProjects = projectService.getCompletedProjectCount(user.getId());
-            long inProgressProjects = projectService.getInProgressProjectCount(user.getId());
-
-            long totalTasks = taskService.getTaskCount(user.getId());
-            long completedTasks = taskService.getCompletedTaskCount(user.getId());
-            long inProgressTasks = taskService.getInProgressTaskCount(user.getId());
+            long totalTasks = taskService.getTaskCount(userId);
+            long completedTasks = taskService.getCompletedTaskCount(userId);
+            long inProgressTasks = taskService.getInProgressTaskCount(userId);
 
             DashboardStatsDTO stats = DashboardStatsDTO.builder()
                     .totalProjects(totalProjects)
@@ -89,102 +83,55 @@ public class DashboardController {
 
         } catch (RuntimeException e) {
             log.error("Error fetching dashboard stats: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @GetMapping("/projects")
     public ResponseEntity<?> getProjectSummaries() {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "User not found"
-                ));
-            }
-
-            List<ProjectSummaryDTO> projects = projectService.viewAllProjectsSummary(user.getId());
+            UUID userId = userPrincipal().getUserId();
+            List<ProjectSummaryDTO> projects = projectService.viewAllProjectsSummary(userId);
             return ResponseEntity.ok(projects);
-
         } catch (RuntimeException e) {
             log.error("Error fetching project summaries: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @GetMapping("/projects/overdue")
     public ResponseEntity<?> getOverdueProjects() {
         try {
-            UserPrincipal principal =  userPrincipal();
-            String username = principal.getUsername();
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            List<ProjectSummaryDTO> projects = projectService.viewOverdueProjects(user.getId());
+            UUID userId = userPrincipal().getUserId();
+            List<ProjectSummaryDTO> projects = projectService.viewOverdueProjects(userId);
             return ResponseEntity.ok(projects);
-
         } catch (RuntimeException e) {
             log.error("Error fetching overdue projects: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @GetMapping("/tasks")
     public ResponseEntity<?> getTaskSummaries() {
         try {
-            UserPrincipal principal =  userPrincipal();
-            String username = principal.getUsername();
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            List<TaskSummaryDTO> tasks = taskService.viewAllTasksSummary(user.getId());
+            UUID userId = userPrincipal().getUserId();
+            List<TaskSummaryDTO> tasks = taskService.viewAllTasksSummary(userId);
             return ResponseEntity.ok(tasks);
-
         } catch (RuntimeException e) {
             log.error("Error fetching task summaries: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @GetMapping("/tasks/overdue")
     public ResponseEntity<?> getOverdueTasks() {
         try {
-            UserPrincipal principal =  userPrincipal();
-            String username = principal.getUsername();
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "error", "Invalid authentication token"
-                ));
-            }
-
-            List<TaskSummaryDTO> tasks = taskService.viewOverdueTasks(user.getId());
+            UUID userId = userPrincipal().getUserId();
+            List<TaskSummaryDTO> tasks = taskService.viewOverdueTasks(userId);
             return ResponseEntity.ok(tasks);
-
         } catch (RuntimeException e) {
             log.error("Error fetching overdue tasks: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", e.getMessage()
-            ));
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -195,14 +142,8 @@ public class DashboardController {
     @PostMapping("/users/search")
     public ResponseEntity<?> searchUsers(@RequestBody SearchUserRequest request) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.searchUser(request, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.searchUser(request, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -211,14 +152,8 @@ public class DashboardController {
     @PostMapping("/teams")
     public ResponseEntity<?> createTeam(@RequestBody CreateTeamRequest request) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.status(HttpStatus.CREATED).body(userService.createTeam(request, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.status(HttpStatus.CREATED).body(userService.createTeam(request, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -227,14 +162,8 @@ public class DashboardController {
     @PostMapping("/teams/{teamId}/members")
     public ResponseEntity<?> addTeamMember(@PathVariable UUID teamId, @RequestBody AddTeamRequest request) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.addMember(teamId, request, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.addMember(teamId, request, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -243,14 +172,8 @@ public class DashboardController {
     @GetMapping("/teams/{teamId}/members")
     public ResponseEntity<?> viewTeamMembers(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.viewTeamMembers(teamId, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.viewTeamMembers(teamId, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -259,14 +182,8 @@ public class DashboardController {
     @GetMapping("/teams/{teamId}/members/details")
     public ResponseEntity<?> viewTeamMembersWithRole(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.viewTeamMembersWithRole(teamId, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.viewTeamMembersWithRole(teamId, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -275,14 +192,8 @@ public class DashboardController {
     @DeleteMapping("/teams/{teamId}/members/{memberId}")
     public ResponseEntity<?> removeTeamMember(@PathVariable UUID teamId, @PathVariable UUID memberId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.removeMember(teamId, memberId, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.removeMember(teamId, memberId, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -291,13 +202,8 @@ public class DashboardController {
     @DeleteMapping("/teams/{teamId}")
     public ResponseEntity<?> deleteTeam(@PathVariable UUID teamId) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            userService.deleteTeam(teamId, user.getId());
+            UUID userId = userPrincipal().getUserId();
+            userService.deleteTeam(teamId, userId);
             return ResponseEntity.ok(Map.of("message", "Team deleted successfully"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -307,13 +213,8 @@ public class DashboardController {
     @GetMapping("/teams/joined")
     public ResponseEntity<?> viewJoinedTeams() {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.viewJoinedTeams(user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.viewJoinedTeams(userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -322,29 +223,21 @@ public class DashboardController {
     @GetMapping("/teams/count")
     public ResponseEntity<?> getJoinedTeamsCount() {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(Map.of("count", userService.numberOfTeamsJoined(user.getId())));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(Map.of("count", userService.numberOfTeamsJoined(userId)));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @PatchMapping("/teams/{teamId}/members/{memberId}/role")
-    public ResponseEntity<?> updateMemberRole(@PathVariable UUID teamId, @PathVariable UUID memberId, @RequestParam TeamStatus role) {
+    public ResponseEntity<?> updateMemberRole(
+            @PathVariable UUID teamId,
+            @PathVariable UUID memberId,
+            @RequestParam TeamStatus role) {
         try {
-            UserPrincipal principal = userPrincipal();
-            String username = principal.getUsername();
-            User user = userRegistrationService.findByEmail(username);
-            if (user == null) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Invalid token"));
-            }
-            return ResponseEntity.ok(userService.updateMemberRole(teamId, memberId, role, user.getId()));
+            UUID userId = userPrincipal().getUserId();
+            return ResponseEntity.ok(userService.updateMemberRole(teamId, memberId, role, userId));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

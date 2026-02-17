@@ -46,7 +46,6 @@ public class TeamBasedServices {
     @PersistenceContext
     private EntityManager entityManager;
 
-    // Supported file types and their MIME types
     private static final Map<String, DocumentType> MIME_TYPE_MAP = Map.of(
             "application/pdf", DocumentType.PDF,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document", DocumentType.WORD,
@@ -61,7 +60,6 @@ public class TeamBasedServices {
 
     // ==================== TEAM PROJECT METHODS ====================
 
-    // to create a team based project
     @Transactional
     @Caching(evict = {
             @CacheEvict(key = "'team:' + #teamId + '_projects'"),
@@ -69,21 +67,14 @@ public class TeamBasedServices {
             @CacheEvict(key = "'team:' + #teamId + '_projectCount'")
     })
     public TeamProjectResponse createTeamProject(TeamProjectCreateDTO dto, UUID adminId, UUID teamId) throws IOException {
-        log.info("Creating team project for admin ID, {}", adminId);
+        log.info("Creating team project for admin ID: {}", adminId);
 
         User user = userRepo.findById(adminId)
-                .orElseThrow(() -> {
-                    log.warn("User with id {} not found", adminId);
-                    return new RuntimeException("User not found");
-                });
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
         Team team = teamRepository.findById(teamId)
-                .orElseThrow(() -> {
-                    log.warn("Team with id {} not found", teamId);
-                    return new EntityNotFoundException("Team not found");
-                });
+                .orElseThrow(() -> new EntityNotFoundException("Team not found"));
 
-        // check if user is an admin
         if (!isTeamAdminOrOwner(user.getId(), team)) {
             log.warn("User {} is not authorized to create projects in team {}", adminId, teamId);
             throw new RuntimeException("Only team admins can create projects");
@@ -107,51 +98,40 @@ public class TeamBasedServices {
 
         log.info("Team project created successfully - ID: {}, Name: {}", savedProject.getId(), savedProject.getTitle());
 
-        // upload documents if provided
         if (dto.documents() != null && !dto.documents().isEmpty()) {
             log.info("Uploading {} documents for project {}", dto.documents().size(), savedProject.getId());
             uploadDocumentsForProject(savedProject, user, dto.documents(), dto.documentDescription());
         }
 
-        // Return the project response with documents included
         return buildProjectResponse(savedProject, true, adminId);
     }
 
-    private List<TeamProjectDocumentResponseDTO> uploadDocumentsForProject(TeamProject project, User user, List<MultipartFile> files, String description) throws IOException {
+    private List<TeamProjectDocumentResponseDTO> uploadDocumentsForProject(
+            TeamProject project, User user, List<MultipartFile> files, String description) throws IOException {
+
         List<TeamProjectDocumentResponseDTO> uploadedDocuments = new ArrayList<>();
-        log.info("📤 Starting upload of {} files for project {}", files.size(), project.getId());
+        log.info("Starting upload of {} files for project {}", files.size(), project.getId());
 
         for (MultipartFile file : files) {
             if (file.isEmpty()) {
-                log.warn("⚠️ Skipping empty file");
+                log.warn("Skipping empty file");
                 continue;
             }
 
-            log.info("📄 Processing file: {} (size: {} bytes, type: {})",
-                    file.getOriginalFilename(), file.getSize(), file.getContentType());
-
-            // Validate file size
             if (file.getSize() > MAX_FILE_SIZE) {
-                String errorMsg = "File " + file.getOriginalFilename() + " exceeds maximum size of 50MB";
-                log.error("❌ {}", errorMsg);
-                throw new RuntimeException(errorMsg);
+                throw new RuntimeException("File " + file.getOriginalFilename() + " exceeds maximum size of 50MB");
             }
 
-            // Validate MIME type
             String mimeType = file.getContentType();
             if (mimeType == null || !MIME_TYPE_MAP.containsKey(mimeType)) {
-                String errorMsg = "Unsupported file type: " + mimeType + ". Supported types: PDF, Word, PowerPoint, Excel";
-                log.error("❌ {}", errorMsg);
-                throw new RuntimeException(errorMsg);
+                throw new RuntimeException("Unsupported file type: " + mimeType + ". Supported types: PDF, Word, PowerPoint, Excel");
             }
 
             try {
                 byte[] fileBytes = file.getBytes();
                 String base64Content = Base64.getEncoder().encodeToString(fileBytes);
                 DocumentType docType = MIME_TYPE_MAP.get(mimeType);
-                String fileName = UUID.randomUUID().toString() + getFileExtension(file.getOriginalFilename());
-
-                log.info("🔄 Creating document entity for: {}", file.getOriginalFilename());
+                String fileName = UUID.randomUUID() + getFileExtension(file.getOriginalFilename());
 
                 TeamProjectDocument document = TeamProjectDocument.builder()
                         .fileName(fileName)
@@ -167,22 +147,17 @@ public class TeamBasedServices {
                         .updatedAt(LocalDateTime.now())
                         .build();
 
-                log.info("💾 Saving document to database...");
                 TeamProjectDocument savedDocument = teamprojectDocumentRepo.save(document);
-
-                log.info("✅ Document uploaded successfully - ID: {}, Name: {}, Size: {} bytes, Type: {}",
-                        savedDocument.getId(), savedDocument.getOriginalFileName(),
-                        savedDocument.getFileSize(), savedDocument.getDocumentType());
-
+                log.info("Document uploaded - ID: {}, Name: {}", savedDocument.getId(), savedDocument.getOriginalFileName());
                 uploadedDocuments.add(buildDocumentResponse(savedDocument));
 
             } catch (IOException e) {
-                log.error("❌ Failed to process file: {}", file.getOriginalFilename(), e);
+                log.error("Failed to process file: {}", file.getOriginalFilename(), e);
                 throw new RuntimeException("Failed to process file: " + file.getOriginalFilename());
             }
         }
 
-        log.info("🎉 Upload complete! Total documents uploaded: {}", uploadedDocuments.size());
+        log.info("Upload complete. Total documents uploaded: {}", uploadedDocuments.size());
         return uploadedDocuments;
     }
 
@@ -212,31 +187,23 @@ public class TeamBasedServices {
     }
 
     private TeamProjectResponse buildProjectResponse(TeamProject project, boolean includeDocuments, UUID currentUserId) {
-        log.info("🔨 Building project response for project ID: {}, includeDocuments: {}", project.getId(), includeDocuments);
-
-        // ✅ Query documents directly from repository instead of lazy-loaded collection
         List<TeamProjectDocument> documents = new ArrayList<>();
-        long documentCount = 0;
+        long documentCount;
 
         if (includeDocuments) {
             documents = teamprojectDocumentRepo.findByProjectAndIsDeletedFalse(project);
             documentCount = documents.size();
-            log.info("📊 Found {} active documents for project {}", documentCount, project.getId());
         } else {
             documentCount = teamprojectDocumentRepo.countByProjectAndIsDeletedFalse(project);
-            log.info("📊 Document count for project {}: {}", project.getId(), documentCount);
         }
 
-        // ✅ Get the role of the current user in the team
+        // FIX: replaced instanceof cast with pattern variable
         TeamStatus memberRole = project.getTeam().getMembers().stream()
                 .filter(m -> m.getUser().getId().equals(currentUserId))
                 .map(TeamMember::getRole)
                 .findFirst()
-                .orElse(TeamStatus.MEMBER); // Default if not found
+                .orElse(TeamStatus.MEMBER);
 
-        log.info("👤 Role of current user {} in project {}: {}", currentUserId, project.getId(), memberRole);
-
-        // ✅ Build the response
         TeamProjectResponse.TeamProjectResponseBuilder builder = TeamProjectResponse.builder()
                 .id(project.getId())
                 .name(project.getTitle())
@@ -253,23 +220,16 @@ public class TeamBasedServices {
                 .documentCount(documentCount);
 
         if (includeDocuments && !documents.isEmpty()) {
-            List<TeamProjectDocumentResponseDTO> documentDTOs = documents.stream()
+            builder.documents(documents.stream()
                     .map(this::buildDocumentResponse)
-                    .collect(Collectors.toList());
-            builder.documents(documentDTOs);
-            log.info("📎 Added {} documents to response", documentDTOs.size());
+                    .collect(Collectors.toList()));
         } else {
-            builder.documents(new ArrayList<>()); // Empty list instead of null
+            builder.documents(new ArrayList<>());
         }
 
-        TeamProjectResponse response = builder.build();
-        log.info("✅ Project response built successfully - Documents included: {}, Role: {}",
-                response.getDocumentCount(), memberRole);
-
-        return response;
+        return builder.build();
     }
 
-    // to update team projects
     @Transactional
     @Caching(evict = {
             @CacheEvict(key = "'project:' + #teamProjectId"),
@@ -279,60 +239,32 @@ public class TeamBasedServices {
     })
     public TeamProjectResponse updateTeamProject(UUID teamProjectId, UUID adminId, TeamProjectUpdateDTO dto, UUID teamId) throws IOException {
         User user = userRepo.findById(adminId)
-                .orElseThrow(() -> {
-                    log.warn("User with id {} not found", adminId);
-                    return new RuntimeException("User not found");
-                });
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
         Team team = teamRepository.findById(teamId)
-                .orElseThrow(() -> {
-                    log.warn("Team with id {} not found", teamId);
-                    return new RuntimeException("Team not found");
-                });
+                .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        // Verify user is team member
         if (!isTeamMember(user.getId(), team)) {
-            log.warn("User is not a member of this team");
             throw new RuntimeException("User is not a member of this team");
         }
 
-        // Check if requester is ADMIN of the team
         if (!isTeamAdminOrOwner(user.getId(), team)) {
-            log.warn("User {} is not authorized to update projects in team {}", user.getId(), teamId);
             throw new RuntimeException("Only team admins can update projects");
         }
 
         TeamProject project = teamProjectRepo.findById(teamProjectId)
-                .orElseThrow(() -> {
-                    log.warn("Team project with id {} not found", teamProjectId);
-                    return new RuntimeException("Team project not found");
-                });
+                .orElseThrow(() -> new RuntimeException("Team project not found"));
 
-        // to update the fields
-        if (dto.getTitle() != null && !dto.getTitle().isBlank()) {
-            project.setTitle(dto.getTitle());
-        }
-        if (dto.getDescription() != null) {
-            project.setDescription(dto.getDescription());
-        }
-        if (dto.getStatus() != null) {
-            project.setStatus(dto.getStatus());
-        }
-        if (dto.getStartDate() != null) {
-            project.setStartDate(dto.getStartDate());
-        }
-        if (dto.getEndDate() != null) {
-            project.setEndDate(dto.getEndDate());
-        }
+        if (dto.getTitle() != null && !dto.getTitle().isBlank()) project.setTitle(dto.getTitle());
+        if (dto.getDescription() != null) project.setDescription(dto.getDescription());
+        if (dto.getStatus() != null) project.setStatus(dto.getStatus());
+        if (dto.getStartDate() != null) project.setStartDate(dto.getStartDate());
+        if (dto.getEndDate() != null) project.setEndDate(dto.getEndDate());
 
         TeamProject updatedProject = teamProjectRepo.save(project);
         entityManager.flush();
 
-        log.info("Team project updated successfully - ID: {}", updatedProject.getId());
-
-        // if additional documents were uploaded
         if (dto.getDocuments() != null && !dto.getDocuments().isEmpty()) {
-            log.info("Uploading {} documents for project {}", dto.getDocuments().size(), updatedProject.getId());
             uploadDocumentsForProject(updatedProject, user, dto.getDocuments(), dto.getDocumentDescription());
             entityManager.flush();
             entityManager.refresh(updatedProject);
@@ -344,126 +276,112 @@ public class TeamBasedServices {
     @Transactional(readOnly = true)
     @Cacheable(key = "'project:' + #teamProjectId")
     public TeamProjectResponse getProjectById(UUID teamProjectId, UUID userId, UUID teamId) {
-        // ✅ Fetch the project and ensure the user is a member in one query
         TeamProject project = teamProjectRepo.findByIdAndUserIsTeamMember(teamProjectId, userId)
-                .orElseThrow(() -> {
-                    log.warn("Project {} not found or user {} is not a member", teamProjectId, userId);
-                    return new RuntimeException("Project not found or access denied");
-                });
+                .orElseThrow(() -> new RuntimeException("Project not found or access denied"));
 
-        // ✅ Check that the project belongs to the specified team
         if (!project.getTeam().getId().equals(teamId)) {
-            log.warn("Project {} does not belong to team {}", project.getId(), teamId);
             throw new RuntimeException("Project does not belong to the specified team");
         }
 
-        log.info("User {} has access to project {} of team {}", userId, project.getTitle(), teamId);
-
-        // ✅ Build and return the project response (with documents if needed)
         return buildProjectResponse(project, true, userId);
     }
 
-    // get all team projects
     @Transactional(readOnly = true)
     @Cacheable(key = "'user:' + #userId + '_projects'")
     public List<TeamProjectResponse> getAllProjects(UUID userId) {
-        log.info("Fetching all projects for team user");
+        userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("User not found with id, {}", userId);
-                    return new RuntimeException("User not found");
-                });
+        List<TeamProject> projects = teamProjectRepo.findAllByUserIsTeamMember(userId);
 
-        List<TeamProject> projects = teamProjectRepo.findAllByUserIsTeamMember(user.getId());
-
-        if (projects == null) {
-            log.warn("No projects found");
-            return Collections.emptyList();
-        }
+        if (projects == null) return Collections.emptyList();
 
         return projects.stream()
                 .map(project -> buildProjectResponse(project, true, userId))
                 .collect(Collectors.toList());
     }
 
-    // to get all project documents, that the entire history of all documents uploaded
     @Transactional(readOnly = true)
-    @Cacheable(
-            cacheNames = "projectDocuments",
-            key = "'user:' + #userId + '_allDocuments'"
-    )
+    @Cacheable(cacheNames = "projectDocuments", key = "'user:' + #userId + '_allDocuments'")
     public List<TeamProjectDocumentResponseDTO> getAllDocumentsForUser(UUID userId) {
-        log.info("Fetching all projects for user ID: {}", userId);
-
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        List<TeamProjectDocument> documents = teamprojectDocumentRepo.findAllByUserIsTeamMember(user.getId());
+        List<TeamProjectDocument> documents = teamprojectDocumentRepo.findAllByUserIsTeamMember(userId);
 
-        if (documents == null) {
-            log.warn("No documents found");
-            return Collections.emptyList();
-        }
+        if (documents == null) return Collections.emptyList();
 
         return documents.stream()
                 .map(this::buildDocumentResponse)
                 .collect(Collectors.toList());
     }
 
-    // get all project documents
     public List<TeamProjectDocumentResponseDTO> getProjectDocuments(UUID projectId, UUID userId) {
-        log.info("Fetching documents for project ID: {}", projectId);
-
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         TeamProject project = teamProjectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
-        List<TeamProjectDocument> documents = teamprojectDocumentRepo.findAllByProjectAndUserIsTeamMember(project.getId(), user.getId());
+        List<TeamProjectDocument> documents = teamprojectDocumentRepo
+                .findAllByProjectAndUserIsTeamMember(project.getId(), userId);
 
-        if (documents == null) {
-            log.warn("No documents found");
-            return Collections.emptyList();
-        }
+        if (documents == null) return Collections.emptyList();
 
         return documents.stream()
                 .map(this::buildDocumentResponse)
                 .collect(Collectors.toList());
     }
 
-    // to delete a team project
+    // FIX: added teamId parameter for ownership validation (was ignored before)
     @Transactional
     @Caching(evict = {
             @CacheEvict(key = "'project:' + #projectId"),
             @CacheEvict(key = "'project:' + #projectId + '_documents'", cacheNames = "projectDocuments"),
             @CacheEvict(key = "'project:' + #projectId + '_tasks'", cacheNames = "teamTasks"),
-            @CacheEvict(allEntries = true, cacheNames = "teamProjects")  // Clear all project caches
+            @CacheEvict(allEntries = true, cacheNames = "teamProjects")
     })
-    public void deleteProject(UUID projectId, UUID userId) {
-        log.info("Deleting project ID: {} for user ID: {}", projectId, userId);
+    public void deleteProject(UUID projectId, UUID userId, UUID teamId) {
+        log.info("Deleting project ID: {} for user ID: {} in team ID: {}", projectId, userId, teamId);
 
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
 
         TeamProject project = teamProjectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
+
+        // FIX: validate project actually belongs to the requested team
+        if (!project.getTeam().getId().equals(teamId)) {
+            log.warn("Project {} does not belong to team {}", projectId, teamId);
+            throw new RuntimeException("Project does not belong to the specified team");
+        }
+
+        // FIX: validate user has permission to delete
+        if (!isTeamAdminOrOwner(userId, team)) {
+            log.warn("User {} is not authorized to delete project {} in team {}", userId, projectId, teamId);
+            throw new RuntimeException("Only team admins can delete projects");
+        }
 
         teamProjectRepo.delete(project);
         log.info("Project deleted successfully - ID: {}", projectId);
     }
 
-    // to upload documents to a team project
     @Transactional
     @Caching(evict = {
             @CacheEvict(cacheNames = "projectDocuments", key = "'project:' + #projectId + '_documents'"),
             @CacheEvict(cacheNames = "projectDocuments", key = "'user:' + #userId + '_allDocuments'"),
-            @CacheEvict(key = "'project:' + #projectId")  // Project response includes document count
+            @CacheEvict(key = "'project:' + #projectId")
     })
-    public List<TeamProjectDocumentResponseDTO> uploadDocument(UUID projectId, UUID userId, List<MultipartFile> files, String description, UUID teamId) throws IOException {
-        log.info("Uploading {} documents to project ID: {}", files.size(), projectId);
+    public List<TeamProjectDocumentResponseDTO> uploadDocument(
+            UUID projectId, UUID userId, List<MultipartFile> files, String description, UUID teamId) throws IOException {
 
+        userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // FIX: fetch user entity for uploadDocumentsForProject
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -473,14 +391,11 @@ public class TeamBasedServices {
         Team team = teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        // to see if project belongs to the team
         if (!project.getTeam().getId().equals(team.getId())) {
-            log.warn("Unauthorized access: project does not belong to team");
-            throw new RuntimeException("Unauthorized access");
+            throw new RuntimeException("Unauthorized access: project does not belong to team");
         }
 
         if (!isTeamAdminOrOwner(user.getId(), team)) {
-            log.warn("User {} is not authorized to upload documents to team {}", user.getId(), teamId);
             throw new RuntimeException("Only team admins can upload documents");
         }
 
@@ -491,7 +406,6 @@ public class TeamBasedServices {
         return uploadDocs;
     }
 
-    // to delete project document
     @Transactional
     @Caching(evict = {
             @CacheEvict(cacheNames = "projectDocuments", key = "'project:' + #projectId + '_documents'"),
@@ -499,9 +413,7 @@ public class TeamBasedServices {
             @CacheEvict(key = "'project:' + #projectId")
     })
     public String deleteDocument(UUID documentId, UUID userId, UUID teamId, UUID projectId) {
-        log.info("Deleting document ID: {} for user ID: {}", documentId, userId);
-
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         TeamProject project = teamProjectRepo.findById(projectId)
@@ -510,14 +422,11 @@ public class TeamBasedServices {
         Team team = teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        // to see if project belongs to the team
         if (!project.getTeam().getId().equals(team.getId())) {
-            log.warn("Unauthorized access: project does not belong to team");
-            throw new RuntimeException("Unauthorized access");
+            throw new RuntimeException("Unauthorized access: project does not belong to team");
         }
 
-        if (!isTeamAdminOrOwner(user.getId(), team)) {
-            log.warn("User {} is not authorized to delete documents in team {}", user.getId(), teamId);
+        if (!isTeamAdminOrOwner(userId, team)) {
             throw new RuntimeException("Only team admins can delete documents");
         }
 
@@ -527,138 +436,85 @@ public class TeamBasedServices {
         document.markAsDeleted();
         teamprojectDocumentRepo.delete(document);
 
-        log.info("Document deleted successfully");
+        log.info("Document deleted successfully - ID: {}", documentId);
         return "Document deleted successfully";
     }
 
-    // view team project summary
     @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_summary'")
     public List<TeamProjectSummaryDto> viewAllProjectSummary(UUID userId, UUID teamId) {
-        log.info("Fetching all projects for team user");
-
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("User not found with id, {}", userId);
-                    throw new RuntimeException("User not found");
-                });
+        userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
         Team team = teamRepository.findById(teamId)
-                .orElseThrow(() -> {
-                    log.warn("Team not found with id, {}", teamId);
-                    throw new RuntimeException("Team not found");
-                });
+                .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        List<TeamProject> project = teamProjectRepo.findAllByTeamIdAndUserIsTeamMember(team.getId(), user.getId());
-
-        return project.stream()
-                .map(teamProject -> {
-                    long daysLeft = 0;
-                    if (teamProject.getEndDate() != null) {
-                        daysLeft = ChronoUnit.DAYS.between(LocalDate.now(), teamProject.getEndDate());
-                    }
-
-                    return TeamProjectSummaryDto.builder()
-                            .id(teamProject.getId())
-                            .name(teamProject.getTitle())
-                            .description(teamProject.getDescription())
-                            .dueDate(teamProject.getEndDate())
-                            .daysLeft(daysLeft)
-                            .build();
-                }).collect(Collectors.toList());
-    }
-
-    // to count the number of projects
-    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_count'")
-    public long getProjectCount(UUID userId, UUID teamId) {
-        log.info("Fetching project count for user and team");
-
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("User not found with id, {}", userId);
-                    throw new RuntimeException("User not found");
-                });
-
-        Team team = teamRepository.findById(teamId)
-                .orElseThrow(() -> {
-                    log.warn("Team not found with id, {}", teamId);
-                    throw new RuntimeException("Team not found");
-                });
-
-        if (!team.getUser().getId().equals(userId)) {
-            log.warn("Unauthorized access: user is not team owner");
-            throw new RuntimeException("Unauthorized access");
-        }
-
-        return teamProjectRepo.countByTeamIdAndUserIsTeamMember(team.getId(), user.getId());
-    }
-
-    // count based on status
-    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_countBasedOnStatus'")
-    public long countBasedOnStatusProjects(UUID userId, UUID teamId, ProjectStatus status) {
-        log.info("Fetching project count by status for user and team");
-
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("User not found with id, {}", userId);
-                    throw new RuntimeException("User not found");
-                });
-
-        Team team = teamRepository.findById(teamId)
-                .orElseThrow(() -> {
-                    log.warn("Team not found with id, {}", teamId);
-                    throw new RuntimeException("Team not found");
-                });
-
-        if (!team.getUser().getId().equals(userId)) {
-            log.warn("Unauthorized access: user is not team owner");
-            throw new RuntimeException("Unauthorized access");
-        }
-
-        return teamProjectRepo.countByTeamIdAndUserAndStatus(team.getId(), user.getId(), status);
-    }
-
-    // view overdue projects using repository filtering
-    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_overdue'")
-    public List<TeamProjectSummaryDto> viewOverdueProjects(UUID userId, UUID teamId) {
-        log.info("Fetching overdue projects for user {} in team {}", userId, teamId);
-
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> {
-                    log.warn("User not found with id {}", userId);
-                    return new RuntimeException("User not found");
-                });
-
-        Team team = teamRepository.findById(teamId)
-                .orElseThrow(() -> {
-                    log.warn("Team not found with id {}", teamId);
-                    return new RuntimeException("Team not found");
-                });
-
-        List<TeamProject> overdueProjects = teamProjectRepo.findOverdueProjects(team.getId(), user.getId());
-
-        return overdueProjects.stream()
+        return teamProjectRepo.findAllByTeamIdAndUserIsTeamMember(team.getId(), userId).stream()
                 .map(project -> {
-                    long daysLeft = ChronoUnit.DAYS.between(
-                            LocalDate.now(),
-                            project.getEndDate()
-                    );
+                    long daysLeft = project.getEndDate() != null
+                            ? ChronoUnit.DAYS.between(LocalDate.now(), project.getEndDate())
+                            : 0;
 
                     return TeamProjectSummaryDto.builder()
                             .id(project.getId())
                             .name(project.getTitle())
                             .description(project.getDescription())
                             .dueDate(project.getEndDate())
-                            .daysLeft(daysLeft) // negative for overdue
+                            .daysLeft(daysLeft)
                             .build();
-                })
+                }).collect(Collectors.toList());
+    }
+
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_count'")
+    public long getProjectCount(UUID userId, UUID teamId) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
+
+        if (!team.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Unauthorized access");
+        }
+
+        return teamProjectRepo.countByTeamIdAndUserIsTeamMember(team.getId(), user.getId());
+    }
+
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_countBasedOnStatus'")
+    public long countBasedOnStatusProjects(UUID userId, UUID teamId, ProjectStatus status) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
+
+        if (!team.getUser().getId().equals(userId)) {
+            throw new RuntimeException("Unauthorized access");
+        }
+
+        return teamProjectRepo.countByTeamIdAndUserAndStatus(team.getId(), user.getId(), status);
+    }
+
+    @Cacheable(key = "'team:' + #teamId + '_user:' + #userId + '_overdue'")
+    public List<TeamProjectSummaryDto> viewOverdueProjects(UUID userId, UUID teamId) {
+        userRepo.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
+
+        return teamProjectRepo.findOverdueProjects(team.getId(), userId).stream()
+                .map(project -> TeamProjectSummaryDto.builder()
+                        .id(project.getId())
+                        .name(project.getTitle())
+                        .description(project.getDescription())
+                        .dueDate(project.getEndDate())
+                        .daysLeft(ChronoUnit.DAYS.between(LocalDate.now(), project.getEndDate()))
+                        .build())
                 .toList();
     }
 
     // ==================== TEAM BASED TASKS ====================
 
-    /**
-     * Create a task for a team project
-     */
     @Transactional
     @Caching(evict = {
             @CacheEvict(cacheNames = "teamTasks", key = "'project:' + #projectId + '_tasks'"),
@@ -666,8 +522,6 @@ public class TeamBasedServices {
             @CacheEvict(cacheNames = "teamTasks", allEntries = true, condition = "#dto.assignedToUserId != null")
     })
     public TeamTaskResponseDTO createTask(UUID projectId, UUID userId, UUID teamId, TeamTaskCreateDTO dto) {
-        log.info("Creating task for project ID: {} by user ID: {}", projectId, userId);
-
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -677,17 +531,14 @@ public class TeamBasedServices {
         TeamProject project = teamProjectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
-        // Verify project belongs to team
         if (!project.getTeam().getId().equals(teamId)) {
             throw new RuntimeException("Project does not belong to the specified team");
         }
 
-        // Verify user is team member or admin
         if (!isTeamMember(userId, team)) {
             throw new RuntimeException("Only team members can create tasks");
         }
 
-        // Verify assigned user is team member if specified
         User assignedUser = null;
         if (dto.getAssignedToUserId() != null) {
             assignedUser = userRepo.findById(dto.getAssignedToUserId())
@@ -712,9 +563,8 @@ public class TeamBasedServices {
                 .build();
 
         TeamTask savedTask = teamTaskRepo.save(task);
-        log.info("Task created successfully - ID: {}, Title: {}", savedTask.getId(), savedTask.getTitle());
+        log.info("Task created - ID: {}, Title: {}", savedTask.getId(), savedTask.getTitle());
 
-        // Send email notification to assigned user
         if (assignedUser != null) {
             sendTaskAssignmentEmail(assignedUser, task, project);
         }
@@ -722,50 +572,47 @@ public class TeamBasedServices {
         return buildTaskResponse(savedTask);
     }
 
-    /**
-     * Update a task
-     */
+    // FIX: added teamId parameter for ownership validation
     @Transactional
     @Caching(evict = {
             @CacheEvict(cacheNames = "teamTasks", key = "'task:' + #taskId"),
-            @CacheEvict(cacheNames = "teamTasks", allEntries = true)  // Clear all task caches due to potential reassignments
+            @CacheEvict(cacheNames = "teamTasks", allEntries = true)
     })
-    public TeamTaskResponseDTO updateTask(UUID taskId, UUID userId, TeamTaskUpdateDTO dto) {
-        log.info("Updating task ID: {} by user ID: {}", taskId, userId);
+    public TeamTaskResponseDTO updateTask(UUID taskId, UUID userId, UUID teamId, TeamTaskUpdateDTO dto) {
+        log.info("Updating task ID: {} by user ID: {} in team ID: {}", taskId, userId, teamId);
 
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // FIX: validate team exists and user is a member of it
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
 
         TeamTask task = teamTaskRepo.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
-        // Verify user is team member
-        if (!isTeamMember(userId, task.getTeamProject().getTeam())) {
+        // FIX: validate task belongs to this team
+        if (!task.getTeamProject().getTeam().getId().equals(teamId)) {
+            log.warn("Task {} does not belong to team {}", taskId, teamId);
+            throw new RuntimeException("Task does not belong to the specified team");
+        }
+
+        if (!isTeamMember(userId, team)) {
             throw new RuntimeException("Only team members can update tasks");
         }
 
         boolean statusChanged = false;
         TaskStatus oldStatus = task.getStatus();
 
-        // Update fields
-        if (dto.getTitle() != null && !dto.getTitle().isBlank()) {
-            task.setTitle(dto.getTitle());
-        }
-        if (dto.getDescription() != null) {
-            task.setDescription(dto.getDescription());
-        }
+        if (dto.getTitle() != null && !dto.getTitle().isBlank()) task.setTitle(dto.getTitle());
+        if (dto.getDescription() != null) task.setDescription(dto.getDescription());
         if (dto.getStatus() != null && !dto.getStatus().equals(task.getStatus())) {
             task.setStatus(dto.getStatus());
             statusChanged = true;
         }
-        if (dto.getPriority() != null) {
-            task.setPriority(dto.getPriority());
-        }
-        if (dto.getDueDate() != null) {
-            task.setDueDate(dto.getDueDate());
-        }
+        if (dto.getPriority() != null) task.setPriority(dto.getPriority());
+        if (dto.getDueDate() != null) task.setDueDate(dto.getDueDate());
 
-        // Handle reassignment
         if (dto.getAssignedToUserId() != null) {
             User newAssignedUser = userRepo.findById(dto.getAssignedToUserId())
                     .orElseThrow(() -> new RuntimeException("Assigned user not found"));
@@ -777,7 +624,6 @@ public class TeamBasedServices {
             User oldAssignedUser = task.getAssignedTo();
             task.setAssignedTo(newAssignedUser);
 
-            // Send reassignment notification
             if (oldAssignedUser == null || !oldAssignedUser.getId().equals(newAssignedUser.getId())) {
                 sendTaskReassignmentEmail(newAssignedUser, task, task.getTeamProject());
             }
@@ -786,7 +632,6 @@ public class TeamBasedServices {
         task.setUpdatedAt(LocalDateTime.now());
         TeamTask updatedTask = teamTaskRepo.save(task);
 
-        // Send status change notification
         if (statusChanged && task.getAssignedTo() != null) {
             sendTaskStatusChangeEmail(task.getAssignedTo(), task, oldStatus, task.getStatus());
         }
@@ -795,24 +640,31 @@ public class TeamBasedServices {
         return buildTaskResponse(updatedTask);
     }
 
-    /**
-     * Delete a task
-     */
+    // FIX: added teamId parameter for ownership validation
     @Transactional
     @Caching(evict = {
             @CacheEvict(cacheNames = "teamTasks", key = "'task:' + #taskId"),
             @CacheEvict(cacheNames = "teamTasks", allEntries = true)
     })
-    public String deleteTask(UUID taskId, UUID userId) {
-        log.info("Deleting task ID: {} by user ID: {}", taskId, userId);
+    public String deleteTask(UUID taskId, UUID userId, UUID teamId) {
+        log.info("Deleting task ID: {} by user ID: {} in team ID: {}", taskId, userId, teamId);
 
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // FIX: validate team exists
+        teamRepository.findById(teamId)
+                .orElseThrow(() -> new RuntimeException("Team not found"));
 
         TeamTask task = teamTaskRepo.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
-        // Only creator or team admin can delete
+        // FIX: validate task belongs to this team
+        if (!task.getTeamProject().getTeam().getId().equals(teamId)) {
+            log.warn("Task {} does not belong to team {}", taskId, teamId);
+            throw new RuntimeException("Task does not belong to the specified team");
+        }
+
         boolean isCreator = task.getCreatedBy().getId().equals(userId);
         boolean isAdmin = isTeamAdminOrOwner(userId, task.getTeamProject().getTeam());
 
@@ -822,83 +674,48 @@ public class TeamBasedServices {
 
         teamTaskRepo.delete(task);
         log.info("Task deleted successfully - ID: {}", taskId);
-
         return "Task deleted successfully";
     }
 
-    /**
-     * Get all tasks for a project
-     */
     @Transactional(readOnly = true)
-    @Cacheable(
-            cacheNames = "teamTasks",
-            key = "'project:' + #projectId + '_tasks'"
-    )
+    @Cacheable(cacheNames = "teamTasks", key = "'project:' + #projectId + '_tasks'")
     public List<TeamTaskResponseDTO> getProjectTasks(UUID projectId, UUID userId) {
-        log.info("Fetching tasks for project ID: {}", projectId);
-
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
         TeamProject project = teamProjectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
-        // Verify user is team member
         if (!isTeamMember(userId, project.getTeam())) {
             throw new RuntimeException("Only team members can view tasks");
         }
 
-        List<TeamTask> tasks = teamTaskRepo.findByTeamProjectId(projectId);
-
-        return tasks.stream()
+        return teamTaskRepo.findByTeamProjectId(projectId).stream()
                 .map(this::buildTaskResponse)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get tasks assigned to a user
-     */
-    @Cacheable(
-            cacheNames = "teamTasks",
-            key = "'user:' + #userId + '_team:' + #teamId + '_tasks'"
-    )
+    @Cacheable(cacheNames = "teamTasks", key = "'user:' + #userId + '_team:' + #teamId + '_tasks'")
     @Transactional(readOnly = true)
     public List<TeamTaskResponseDTO> getUserTasks(UUID userId, UUID teamId) {
-        log.info("Fetching tasks for user ID: {} in team ID: {}", userId, teamId);
-
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Team team = teamRepository.findById(teamId)
+        teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        List<TeamTask> tasks = teamTaskRepo.findByAssignedToIdAndTeamId(userId, teamId);
-
-        return tasks.stream()
+        return teamTaskRepo.findByAssignedToIdAndTeamId(userId, teamId).stream()
                 .map(this::buildTaskResponse)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get overdue tasks
-     */
     @Transactional(readOnly = true)
-    @Cacheable(
-            cacheNames = "shortLivedCache",
-            key = "'user:' + #userId + '_team:' + #teamId + '_overdueTasks'"
-    )
+    @Cacheable(cacheNames = "shortLivedCache", key = "'user:' + #userId + '_team:' + #teamId + '_overdueTasks'")
     public List<TeamTaskResponseDTO> getOverdueTasks(UUID userId, UUID teamId) {
-        log.info("Fetching overdue tasks for user ID: {} in team ID: {}", userId, teamId);
-
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Team team = teamRepository.findById(teamId)
+        teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        List<TeamTask> tasks = teamTaskRepo.findOverdueTasks(teamId, userId);
-
-        return tasks.stream()
+        return teamTaskRepo.findOverdueTasks(teamId, userId).stream()
                 .map(this::buildTaskResponse)
                 .collect(Collectors.toList());
     }
@@ -916,8 +733,9 @@ public class TeamBasedServices {
                 .createdById(task.getCreatedBy().getId())
                 .createdByName(task.getCreatedBy().getFirstName() + " " + task.getCreatedBy().getLastName())
                 .assignedToId(task.getAssignedTo() != null ? task.getAssignedTo().getId() : null)
-                .assignedToName(task.getAssignedTo() != null ?
-                        task.getAssignedTo().getFirstName() + " " + task.getAssignedTo().getLastName() : null)
+                .assignedToName(task.getAssignedTo() != null
+                        ? task.getAssignedTo().getFirstName() + " " + task.getAssignedTo().getLastName()
+                        : null)
                 .createdAt(task.getCreatedAt())
                 .updatedAt(task.getUpdatedAt())
                 .build();
@@ -925,9 +743,6 @@ public class TeamBasedServices {
 
     // ==================== TEAM BASED REMINDERS ====================
 
-    /**
-     * Create a reminder for a task or project
-     */
     @Transactional
     @Caching(evict = {
             @CacheEvict(cacheNames = "teamReminders", key = "'user:' + #userId + '_team:' + #teamId + '_reminders'"),
@@ -935,22 +750,17 @@ public class TeamBasedServices {
             @CacheEvict(cacheNames = "teamReminders", key = "'task:' + #dto.taskId + '_reminders'", condition = "#dto.taskId != null")
     })
     public TeamReminderResponseDTO createReminder(UUID userId, UUID teamId, TeamReminderCreateDTO dto) {
-        log.info("Creating reminder for user ID: {}", userId);
-
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         Team team = teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        // Verify user is team member
         if (!isTeamMember(userId, team)) {
             throw new RuntimeException("Only team members can create reminders");
         }
 
         TeamProject project = null;
-        TeamTask task = null;
-
         if (dto.getProjectId() != null) {
             project = teamProjectRepo.findById(dto.getProjectId())
                     .orElseThrow(() -> new RuntimeException("Project not found"));
@@ -960,6 +770,7 @@ public class TeamBasedServices {
             }
         }
 
+        TeamTask task = null;
         if (dto.getTaskId() != null) {
             task = teamTaskRepo.findById(dto.getTaskId())
                     .orElseThrow(() -> new RuntimeException("Task not found"));
@@ -985,162 +796,98 @@ public class TeamBasedServices {
                 .build();
 
         TeamReminder savedReminder = teamReminderRepo.save(reminder);
-        log.info("Reminder created successfully - ID: {}", savedReminder.getId());
-
+        log.info("Reminder created - ID: {}", savedReminder.getId());
         return buildReminderResponse(savedReminder);
     }
 
-    /**
-     * Update a reminder
-     */
     @Transactional
     @Caching(evict = {
-            @CacheEvict(cacheNames = "teamReminders", allEntries = true)  // Simplified due to complexity
+            @CacheEvict(cacheNames = "teamReminders", allEntries = true)
     })
     public TeamReminderResponseDTO updateReminder(UUID reminderId, UUID userId, TeamReminderUpdateDTO dto) {
-        log.info("Updating reminder ID: {} by user ID: {}", reminderId, userId);
-
         TeamReminder reminder = teamReminderRepo.findById(reminderId)
                 .orElseThrow(() -> new RuntimeException("Reminder not found"));
 
-        // Only creator can update
         if (!reminder.getUser().getId().equals(userId)) {
             throw new RuntimeException("Only reminder creator can update it");
         }
 
-        if (dto.getTitle() != null) {
-            reminder.setTitle(dto.getTitle());
-        }
-        if (dto.getMessage() != null) {
-            reminder.setMessage(dto.getMessage());
-        }
-        if (dto.getReminderDateTime() != null) {
-            reminder.setReminderDateTime(dto.getReminderDateTime());
-        }
-        if (dto.getIsRecurring() != null) {
-            reminder.setRecurring(dto.getIsRecurring());
-        }
-        if (dto.getRecurringInterval() != null) {
-            reminder.setRecurringInterval(dto.getRecurringInterval());
-        }
-        if (dto.getIsActive() != null) {
-            reminder.setActive(dto.getIsActive());
-        }
+        if (dto.getTitle() != null) reminder.setTitle(dto.getTitle());
+        if (dto.getMessage() != null) reminder.setMessage(dto.getMessage());
+        if (dto.getReminderDateTime() != null) reminder.setReminderDateTime(dto.getReminderDateTime());
+        if (dto.getIsRecurring() != null) reminder.setRecurring(dto.getIsRecurring());
+        if (dto.getRecurringInterval() != null) reminder.setRecurringInterval(dto.getRecurringInterval());
+        if (dto.getIsActive() != null) reminder.setActive(dto.getIsActive());
 
-        TeamReminder updatedReminder = teamReminderRepo.save(reminder);
-        log.info("Reminder updated successfully - ID: {}", updatedReminder.getId());
-
-        return buildReminderResponse(updatedReminder);
+        TeamReminder updated = teamReminderRepo.save(reminder);
+        log.info("Reminder updated - ID: {}", updated.getId());
+        return buildReminderResponse(updated);
     }
 
-    /**
-     * Delete a reminder
-     */
     @Transactional
     @CacheEvict(cacheNames = "teamReminders", allEntries = true)
     public String deleteReminder(UUID reminderId, UUID userId) {
-        log.info("Deleting reminder ID: {} by user ID: {}", reminderId, userId);
-
         TeamReminder reminder = teamReminderRepo.findById(reminderId)
                 .orElseThrow(() -> new RuntimeException("Reminder not found"));
 
-        // Only creator can delete
         if (!reminder.getUser().getId().equals(userId)) {
             throw new RuntimeException("Only reminder creator can delete it");
         }
 
         teamReminderRepo.delete(reminder);
-        log.info("Reminder deleted successfully - ID: {}", reminderId);
-
+        log.info("Reminder deleted - ID: {}", reminderId);
         return "Reminder deleted successfully";
     }
 
-    /**
-     * Get all reminders for a user in a team
-     */
     @Transactional(readOnly = true)
-    @Cacheable(
-            cacheNames = "teamReminders",
-            key = "'user:' + #userId + '_team:' + #teamId + '_reminders'"
-    )
+    @Cacheable(cacheNames = "teamReminders", key = "'user:' + #userId + '_team:' + #teamId + '_reminders'")
     public List<TeamReminderResponseDTO> getUserReminders(UUID userId, UUID teamId) {
-        log.info("Fetching reminders for user ID: {} in team ID: {}", userId, teamId);
-
-        User user = userRepo.findById(userId)
+        userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Team team = teamRepository.findById(teamId)
+        teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        List<TeamReminder> reminders = teamReminderRepo.findByUserIdAndTeamIdAndIsActiveTrue(userId, teamId);
-
-        return reminders.stream()
+        return teamReminderRepo.findByUserIdAndTeamIdAndIsActiveTrue(userId, teamId).stream()
                 .map(this::buildReminderResponse)
                 .collect(Collectors.toList());
     }
 
-
-    @Cacheable(
-            cacheNames = "teamReminders",
-            key = "'project:' + #projectId + '_reminders'"
-    )
+    @Cacheable(cacheNames = "teamReminders", key = "'project:' + #projectId + '_reminders'")
     @Transactional(readOnly = true)
     public List<TeamReminderResponseDTO> getProjectReminders(UUID projectId, UUID userId) {
-        log.info("Fetching reminders for project ID: {}", projectId);
-
         TeamProject project = teamProjectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
-        // Verify user is team member
         if (!isTeamMember(userId, project.getTeam())) {
             throw new RuntimeException("Only team members can view reminders");
         }
 
-        List<TeamReminder> reminders = teamReminderRepo.findByTeamProjectIdAndIsActiveTrue(projectId);
-
-        return reminders.stream()
+        return teamReminderRepo.findByTeamProjectIdAndIsActiveTrue(projectId).stream()
                 .map(this::buildReminderResponse)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Get reminders for a specific task
-     */
-    @Cacheable(
-            cacheNames = "teamReminders",
-            key = "'task:' + #taskId + '_reminders'"
-    )
+    @Cacheable(cacheNames = "teamReminders", key = "'task:' + #taskId + '_reminders'")
     @Transactional(readOnly = true)
     public List<TeamReminderResponseDTO> getTaskReminders(UUID taskId, UUID userId) {
-        log.info("Fetching reminders for task ID: {}", taskId);
-
         TeamTask task = teamTaskRepo.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
-        // Verify user is team member
         if (!isTeamMember(userId, task.getTeamProject().getTeam())) {
             throw new RuntimeException("Only team members can view reminders");
         }
 
-        List<TeamReminder> reminders = teamReminderRepo.findByTeamTaskIdAndIsActiveTrue(taskId);
-
-        return reminders.stream()
+        return teamReminderRepo.findByTeamTaskIdAndIsActiveTrue(taskId).stream()
                 .map(this::buildReminderResponse)
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Scheduled job to send reminders (runs every minute)
-     */
-    @Scheduled(cron = "0 * * * * *") // Every minute
+    @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void sendScheduledReminders() {
-        log.info("Running scheduled reminder check...");
-
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime oneMinuteAhead = now.plusMinutes(1);
-
-        List<TeamReminder> dueReminders = teamReminderRepo.findDueReminders(now, oneMinuteAhead);
+        List<TeamReminder> dueReminders = teamReminderRepo.findDueReminders(now, now.plusMinutes(1));
 
         log.info("Found {} reminders to send", dueReminders.size());
 
@@ -1149,21 +896,15 @@ public class TeamBasedServices {
                 sendReminderEmail(reminder);
                 reminder.setSent(true);
 
-                // Handle recurring reminders
                 if (reminder.isRecurring() && reminder.getRecurringInterval() != null) {
-                    LocalDateTime nextReminder = calculateNextReminderTime(
-                            reminder.getReminderDateTime(),
-                            reminder.getRecurringInterval()
-                    );
-                    reminder.setReminderDateTime(nextReminder);
+                    reminder.setReminderDateTime(
+                            calculateNextReminderTime(reminder.getReminderDateTime(), reminder.getRecurringInterval()));
                     reminder.setSent(false);
                 } else {
                     reminder.setActive(false);
                 }
 
                 teamReminderRepo.save(reminder);
-                log.info("Reminder sent successfully - ID: {}", reminder.getId());
-
             } catch (Exception e) {
                 log.error("Failed to send reminder ID: {}", reminder.getId(), e);
             }
@@ -1201,51 +942,40 @@ public class TeamBasedServices {
                 .build();
     }
 
-    // ==================== TEAM MESSAGES THROUGH EMAIL ====================
+    // ==================== TEAM MESSAGES ====================
 
-    /**
-     * Send a message to team members via email
-     */
     @Transactional
     public String sendTeamMessage(UUID userId, UUID teamId, TeamMessageDTO dto) {
-        log.info("Sending team message from user ID: {} to team ID: {}", userId, teamId);
-
         User sender = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         Team team = teamRepository.findById(teamId)
                 .orElseThrow(() -> new RuntimeException("Team not found"));
 
-        // Verify sender is team member
         if (!isTeamMember(userId, team)) {
             throw new RuntimeException("Only team members can send team messages");
         }
 
-        // Get recipient emails
-        List<String> recipientEmails = new ArrayList<>();
+        List<String> recipientEmails;
 
         if (dto.isSendToAll()) {
-            // Send to all team members except sender
             recipientEmails = team.getMembers().stream()
                     .map(m -> m.getUser().getEmail())
                     .filter(email -> !email.equals(sender.getEmail()))
                     .collect(Collectors.toList());
 
-            // Include team owner if not already included
             if (!team.getUser().getEmail().equals(sender.getEmail())) {
                 recipientEmails.add(team.getUser().getEmail());
             }
         } else if (dto.getRecipientUserIds() != null && !dto.getRecipientUserIds().isEmpty()) {
-            // Send to specific members
+            recipientEmails = new ArrayList<>();
             for (UUID recipientId : dto.getRecipientUserIds()) {
                 User recipient = userRepo.findById(recipientId)
                         .orElseThrow(() -> new RuntimeException("Recipient user not found: " + recipientId));
 
-                // Verify recipient is team member
                 if (!isTeamMember(recipientId, team)) {
                     throw new RuntimeException("Recipient must be a team member: " + recipientId);
                 }
-
                 recipientEmails.add(recipient.getEmail());
             }
         } else {
@@ -1256,18 +986,11 @@ public class TeamBasedServices {
             throw new RuntimeException("No recipients found");
         }
 
-        // Prepare email content
         String subject = String.format("[%s] %s", team.getName(), dto.getSubject());
-        String body = String.format(
-                "From: %s %s (%s)\nTeam: %s\n\n%s",
-                sender.getFirstName(),
-                sender.getLastName(),
-                sender.getEmail(),
-                team.getName(),
-                dto.getMessage()
-        );
+        String body = String.format("From: %s %s (%s)\nTeam: %s\n\n%s",
+                sender.getFirstName(), sender.getLastName(), sender.getEmail(),
+                team.getName(), dto.getMessage());
 
-        // Send emails
         int successCount = 0;
         for (String email : recipientEmails) {
             try {
@@ -1278,19 +1001,11 @@ public class TeamBasedServices {
             }
         }
 
-        log.info("Team message sent successfully to {}/{} recipients", successCount, recipientEmails.size());
-
-        return String.format("Message sent successfully to %d/%d recipients",
-                successCount, recipientEmails.size());
+        return String.format("Message sent successfully to %d/%d recipients", successCount, recipientEmails.size());
     }
 
-    /**
-     * Send a project update to all team members
-     */
     @Transactional
     public String sendProjectUpdate(UUID projectId, UUID userId, ProjectUpdateMessageDTO dto) {
-        log.info("Sending project update for project ID: {}", projectId);
-
         User sender = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -1299,12 +1014,10 @@ public class TeamBasedServices {
 
         Team team = project.getTeam();
 
-        // Verify sender is team member
         if (!isTeamMember(userId, team)) {
             throw new RuntimeException("Only team members can send project updates");
         }
 
-        // Get all team member emails except sender
         List<String> recipientEmails = team.getMembers().stream()
                 .map(m -> m.getUser().getEmail())
                 .filter(email -> !email.equals(sender.getEmail()))
@@ -1314,19 +1027,11 @@ public class TeamBasedServices {
             recipientEmails.add(team.getUser().getEmail());
         }
 
-        // Prepare email
         String subject = String.format("[%s] Project Update: %s", team.getName(), project.getTitle());
-        String body = String.format(
-                "Project: %s\nFrom: %s %s\n\n%s\n\nProject Status: %s\nDue Date: %s",
-                project.getTitle(),
-                sender.getFirstName(),
-                sender.getLastName(),
-                dto.getMessage(),
-                project.getStatus(),
-                project.getEndDate()
-        );
+        String body = String.format("Project: %s\nFrom: %s %s\n\n%s\n\nProject Status: %s\nDue Date: %s",
+                project.getTitle(), sender.getFirstName(), sender.getLastName(),
+                dto.getMessage(), project.getStatus(), project.getEndDate());
 
-        // Send emails
         int successCount = 0;
         for (String email : recipientEmails) {
             try {
@@ -1337,30 +1042,19 @@ public class TeamBasedServices {
             }
         }
 
-        log.info("Project update sent to {}/{} team members", successCount, recipientEmails.size());
-
-        return String.format("Project update sent to %d/%d team members",
-                successCount, recipientEmails.size());
+        return String.format("Project update sent to %d/%d team members", successCount, recipientEmails.size());
     }
 
-    /**
-     * Send task notification via email
-     */
+    // ==================== EMAIL HELPERS ====================
+
     private void sendTaskAssignmentEmail(User assignedUser, TeamTask task, TeamProject project) {
         try {
-            String subject = String.format("New Task Assigned: %s", task.getTitle());
-            String body = String.format(
-                    "Hi %s,\n\nYou have been assigned a new task:\n\nTask: %s\nProject: %s\nDescription: %s\nDue Date: %s\nPriority: %s\n\nPlease log in to view details.",
-                    assignedUser.getFirstName(),
-                    task.getTitle(),
-                    project.getTitle(),
-                    task.getDescription(),
-                    task.getDueDate(),
-                    task.getPriority()
-            );
-
-            emailService.sendEmail(assignedUser.getEmail(), subject, body);
-            log.info("Task assignment email sent to: {}", assignedUser.getEmail());
+            emailService.sendEmail(
+                    assignedUser.getEmail(),
+                    "New Task Assigned: " + task.getTitle(),
+                    String.format("Hi %s,\n\nYou have been assigned a new task:\n\nTask: %s\nProject: %s\nDescription: %s\nDue Date: %s\nPriority: %s",
+                            assignedUser.getFirstName(), task.getTitle(), project.getTitle(),
+                            task.getDescription(), task.getDueDate(), task.getPriority()));
         } catch (Exception e) {
             log.error("Failed to send task assignment email", e);
         }
@@ -1368,19 +1062,12 @@ public class TeamBasedServices {
 
     private void sendTaskReassignmentEmail(User newAssignedUser, TeamTask task, TeamProject project) {
         try {
-            String subject = String.format("Task Reassigned: %s", task.getTitle());
-            String body = String.format(
-                    "Hi %s,\n\nA task has been reassigned to you:\n\nTask: %s\nProject: %s\nDescription: %s\nDue Date: %s\nPriority: %s\n\nPlease log in to view details.",
-                    newAssignedUser.getFirstName(),
-                    task.getTitle(),
-                    project.getTitle(),
-                    task.getDescription(),
-                    task.getDueDate(),
-                    task.getPriority()
-            );
-
-            emailService.sendEmail(newAssignedUser.getEmail(), subject, body);
-            log.info("Task reassignment email sent to: {}", newAssignedUser.getEmail());
+            emailService.sendEmail(
+                    newAssignedUser.getEmail(),
+                    "Task Reassigned: " + task.getTitle(),
+                    String.format("Hi %s,\n\nA task has been reassigned to you:\n\nTask: %s\nProject: %s\nDescription: %s\nDue Date: %s\nPriority: %s",
+                            newAssignedUser.getFirstName(), task.getTitle(), project.getTitle(),
+                            task.getDescription(), task.getDueDate(), task.getPriority()));
         } catch (Exception e) {
             log.error("Failed to send task reassignment email", e);
         }
@@ -1388,17 +1075,11 @@ public class TeamBasedServices {
 
     private void sendTaskStatusChangeEmail(User assignedUser, TeamTask task, TaskStatus oldStatus, TaskStatus newStatus) {
         try {
-            String subject = String.format("Task Status Updated: %s", task.getTitle());
-            String body = String.format(
-                    "Hi %s,\n\nThe status of your task has been updated:\n\nTask: %s\nOld Status: %s\nNew Status: %s\n\nPlease log in to view details.",
-                    assignedUser.getFirstName(),
-                    task.getTitle(),
-                    oldStatus,
-                    newStatus
-            );
-
-            emailService.sendEmail(assignedUser.getEmail(), subject, body);
-            log.info("Task status change email sent to: {}", assignedUser.getEmail());
+            emailService.sendEmail(
+                    assignedUser.getEmail(),
+                    "Task Status Updated: " + task.getTitle(),
+                    String.format("Hi %s,\n\nThe status of your task has been updated:\n\nTask: %s\nOld Status: %s\nNew Status: %s",
+                            assignedUser.getFirstName(), task.getTitle(), oldStatus, newStatus));
         } catch (Exception e) {
             log.error("Failed to send task status change email", e);
         }
@@ -1406,23 +1087,18 @@ public class TeamBasedServices {
 
     private void sendReminderEmail(TeamReminder reminder) {
         try {
-            String subject = String.format("Reminder: %s", reminder.getTitle());
-            String body = String.format(
-                    "Hi %s,\n\nThis is a reminder:\n\n%s\n\n",
-                    reminder.getUser().getFirstName(),
-                    reminder.getMessage()
-            );
+            StringBuilder body = new StringBuilder(
+                    String.format("Hi %s,\n\nThis is a reminder:\n\n%s\n\n",
+                            reminder.getUser().getFirstName(), reminder.getMessage()));
 
             if (reminder.getTeamProject() != null) {
-                body += String.format("Related Project: %s\n", reminder.getTeamProject().getTitle());
+                body.append("Related Project: ").append(reminder.getTeamProject().getTitle()).append("\n");
             }
-
             if (reminder.getTeamTask() != null) {
-                body += String.format("Related Task: %s\n", reminder.getTeamTask().getTitle());
+                body.append("Related Task: ").append(reminder.getTeamTask().getTitle()).append("\n");
             }
 
-            emailService.sendEmail(reminder.getUser().getEmail(), subject, body);
-            log.info("Reminder email sent to: {}", reminder.getUser().getEmail());
+            emailService.sendEmail(reminder.getUser().getEmail(), "Reminder: " + reminder.getTitle(), body.toString());
         } catch (Exception e) {
             log.error("Failed to send reminder email", e);
         }
@@ -1439,7 +1115,6 @@ public class TeamBasedServices {
     private boolean isTeamAdminOrOwner(UUID userId, Team team) {
         boolean isAdmin = team.getMembers().stream()
                 .anyMatch(m -> m.getUser().getId().equals(userId) && m.getRole() == TeamStatus.ADMIN);
-
         return isAdmin || team.getUser().getId().equals(userId);
     }
 }

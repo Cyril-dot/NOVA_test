@@ -364,19 +364,6 @@ public class UserRegistrationController {
     }
 
     // =========================
-    // Login with MFA
-    // =========================
-    @PostMapping("/login-mfa")
-    public ResponseEntity<TokenDto> loginWithMfa(
-            @RequestBody LoginRequest loginRequest
-    ) {
-        TokenDto token =
-                userRegistrationService.loginWithMfa(loginRequest);
-
-        return ResponseEntity.ok(token);
-    }
-
-    // =========================
     // Verify MFA code
     // =========================
     @PostMapping("/verify-mfa")

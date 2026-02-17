@@ -17,7 +17,6 @@ import org.springframework.cache.annotation.CacheConfig;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -44,7 +43,6 @@ public class ProjectService {
     @PersistenceContext
     private EntityManager entityManager;
 
-    // Supported file types and their MIME types
     private static final Map<String, DocumentType> MIME_TYPE_MAP = Map.of(
             "application/pdf", DocumentType.PDF,
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document", DocumentType.WORD,
@@ -62,7 +60,8 @@ public class ProjectService {
     // ========================
     @Transactional
     @Caching(evict = {
-            @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'")
+            @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ALL_userProjects'")
     })
     public ProjectResponseDTO createProject(UUID ownerId, ProjectCreateDTO dto) throws IOException {
         log.info("Creating project for user ID: {}", ownerId);
@@ -70,7 +69,6 @@ public class ProjectService {
         User owner = userRepo.findById(ownerId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Create project
         Project project = Project.builder()
                 .title(dto.getTitle())
                 .description(dto.getDescription())
@@ -81,22 +79,19 @@ public class ProjectService {
                 .build();
 
         Project savedProject = projectRepo.save(project);
-        entityManager.flush(); // ✅ Ensure project is persisted
+        entityManager.flush();
 
         log.info("Project created successfully - ID: {}, Name: {}", savedProject.getId(), savedProject.getTitle());
 
-        // Send project creation email
-            log.info("Sending project creation email to: {}", owner.getEmail());
-            emailService.createProjectMail(owner.getEmail(), savedProject.getTitle());
-            log.info("Project creation email sent successfully to: {}", owner.getEmail());
+        log.info("Sending project creation email to: {}", owner.getEmail());
+        emailService.createProjectMail(owner.getEmail(), savedProject.getTitle());
+        log.info("Project creation email sent successfully to: {}", owner.getEmail());
 
-        // Upload documents if provided
         if (dto.getDocuments() != null && !dto.getDocuments().isEmpty()) {
             log.info("Uploading {} documents for project {}", dto.getDocuments().size(), savedProject.getId());
             uploadDocumentsForProject(savedProject, owner, dto.getDocuments(), dto.getDocumentDescription());
-
-            entityManager.flush();    // ✅ Ensure documents are persisted
-            entityManager.refresh(savedProject); // ✅ Refresh project to load documents
+            entityManager.flush();
+            entityManager.refresh(savedProject);
         }
 
         return buildProjectResponse(savedProject, true);
@@ -107,12 +102,16 @@ public class ProjectService {
     // UPDATE PROJECT
     // ========================
     @Transactional
-    @Caching(
-            evict = {
-                    @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'"),
-                    @CacheEvict(key = "'project:' + #projectId + '_projectDocuments'")
-            }
-    )
+    @Caching(evict = {
+            // Evict all status-specific cache entries for this user
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ALL_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ACTIVE_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:PLANNING_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:IN_PROGRESS_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:COMPLETED_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ARCHIVED_userProjects'"),
+            @CacheEvict(key = "'project:' + #projectId + '_projectDocuments'")
+    })
     public ProjectResponseDTO updateProject(UUID projectId, UUID ownerId, ProjectUpdateDTO dto) throws IOException {
         log.info("Updating project ID: {} for user ID: {}", projectId, ownerId);
 
@@ -125,7 +124,6 @@ public class ProjectService {
         boolean statusChanged = false;
         ProjectStatus newStatus = null;
 
-        // Update fields
         if (dto.getTitle() != null && !dto.getTitle().isBlank()) {
             project.setTitle(dto.getTitle());
         }
@@ -149,18 +147,15 @@ public class ProjectService {
 
         log.info("Project updated successfully - ID: {}", updatedProject.getId());
 
-        // Send status update email if status changed
         if (statusChanged) {
-                log.info("Sending project status update email to: {}", owner.getEmail());
-                emailService.updateProjectMail(owner.getEmail(), updatedProject.getTitle(), newStatus);
-                log.info("Project status update email sent successfully to: {}", owner.getEmail());
+            log.info("Sending project status update email to: {}", owner.getEmail());
+            emailService.updateProjectMail(owner.getEmail(), updatedProject.getTitle(), newStatus);
+            log.info("Project status update email sent successfully to: {}", owner.getEmail());
         }
 
-        // Upload additional documents if provided
         if (dto.getDocuments() != null && !dto.getDocuments().isEmpty()) {
             log.info("Uploading {} additional documents for project {}", dto.getDocuments().size(), updatedProject.getId());
             uploadDocumentsForProject(updatedProject, owner, dto.getDocuments(), dto.getDocumentDescription());
-
             entityManager.flush();
             entityManager.refresh(updatedProject);
         }
@@ -173,7 +168,7 @@ public class ProjectService {
     // GET PROJECT BY ID
     // ========================
     @Transactional(readOnly = true)
-    @Cacheable(key = "'project:' + #projectId + '_projectDetails' + #includeDocuments + 'user:' + #ownerId + '_userProjects'")
+    @Cacheable(key = "'project:' + #projectId + '_details:' + #includeDocuments")
     public ProjectResponseDTO getProjectById(UUID projectId, UUID ownerId, boolean includeDocuments) {
         log.info("Fetching project ID: {} for user ID: {}", projectId, ownerId);
 
@@ -186,15 +181,13 @@ public class ProjectService {
         return buildProjectResponse(project, includeDocuments);
     }
 
+
     // ========================
     // GET ALL PROJECTS FOR USER
     // ========================
-    @Caching(cacheable = {
-            @Cacheable(key = "'owner:' + #ownerId + '_userProjects'"),
-            @Cacheable(key = "'user:' + #ownerId + '_projects'"),
-            @Cacheable(key = "'includeDocuments:' + #includeDocuments + '_user:' + #ownerId + '_projects'")
-    })
     @Transactional(readOnly = true)
+    // FIX: Cache key now includes status so filtered and unfiltered results are stored separately
+    @Cacheable(key = "'owner:' + #ownerId + '_status:' + (#status != null ? #status.name() : 'ALL') + '_userProjects'")
     public List<ProjectResponseDTO> getAllProjects(UUID ownerId, ProjectStatus status, boolean includeDocuments) {
         log.info("Fetching all projects for user ID: {}, status: {}", ownerId, status);
 
@@ -203,17 +196,24 @@ public class ProjectService {
 
         List<Project> projects;
         if (status != null) {
+            log.info("Applying status filter: {}", status);
             projects = projectRepo.findByUserAndStatus(owner, status);
         } else {
+            log.info("No status filter — fetching all projects");
             projects = projectRepo.findByUser(owner);
         }
+
+        log.info("Found {} projects for user {} with status filter: {}", projects.size(), ownerId, status);
 
         return projects.stream()
                 .map(project -> buildProjectResponse(project, includeDocuments))
                 .collect(Collectors.toList());
     }
 
-    // get all documents
+
+    // ========================
+    // GET ALL DOCUMENTS FOR USER
+    // ========================
     @Transactional(readOnly = true)
     @Cacheable(key = "'user:' + #userId + '_documents'")
     public List<ProjectResponseDTO> getAllDocumentsForUser(UUID userId) {
@@ -227,18 +227,17 @@ public class ProjectService {
             return Collections.emptyList();
         }
 
-        boolean includeDocuments = true;
-
         return projects.stream()
-                .map(project -> buildProjectResponse(project, includeDocuments))
+                .map(project -> buildProjectResponse(project, true))
                 .collect(Collectors.toList());
-
     }
 
 
-    // view most recent projects
+    // ========================
+    // GET RECENT PROJECTS (ORDERED)
+    // ========================
     @Transactional(readOnly = true)
-    @Cacheable(key = "'user:' + #userId + '_projects'")
+    @Cacheable(key = "'user:' + #userId + '_orderedProjects'")
     public List<ProjectResponseDTO> getOrderedProjects(UUID userId) {
         log.info("Fetching all projects for user ID: {}", userId);
         User owner = userRepo.findById(userId)
@@ -249,9 +248,9 @@ public class ProjectService {
             log.info("No projects found for user {}", userId);
             return Collections.emptyList();
         }
-        boolean includeDocuments = true;
+
         return projects.stream()
-                .map(project -> buildProjectResponse(project, includeDocuments))
+                .map(project -> buildProjectResponse(project, true))
                 .collect(Collectors.toList());
     }
 
@@ -261,7 +260,13 @@ public class ProjectService {
     // ========================
     @Transactional
     @Caching(evict = {
-            @CacheEvict(key = "'owner:' + #ownerId + '_userProjects'"),
+            // Evict all status-specific cache entries for this user
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ALL_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ACTIVE_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:PLANNING_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:IN_PROGRESS_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:COMPLETED_userProjects'"),
+            @CacheEvict(key = "'owner:' + #ownerId + '_status:ARCHIVED_userProjects'"),
             @CacheEvict(key = "'project:' + #projectId + '_projectDocuments'")
     })
     public void deleteProject(UUID projectId, UUID ownerId) {
@@ -278,12 +283,10 @@ public class ProjectService {
         projectRepo.delete(project);
         log.info("Project deleted successfully - ID: {}", projectId);
 
-        // Send project deletion email
-            log.info("Sending project deletion email to: {}", owner.getEmail());
-            emailService.deleteProjectMail(owner.getEmail(), projectName);
-            log.info("Project deletion email sent successfully to: {}", owner.getEmail());
+        log.info("Sending project deletion email to: {}", owner.getEmail());
+        emailService.deleteProjectMail(owner.getEmail(), projectName);
+        log.info("Project deletion email sent successfully to: {}", owner.getEmail());
     }
-
 
 
     // ========================
@@ -299,7 +302,6 @@ public class ProjectService {
         Project project = projectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
-        // Check if user is the owner
         if (!project.getUser().getId().equals(userId)) {
             throw new RuntimeException("Only project owner can upload documents");
         }
@@ -309,13 +311,13 @@ public class ProjectService {
         entityManager.flush();
         entityManager.refresh(project);
 
-        // Send document upload email
-            log.info("Sending document upload notification email to: {}", user.getEmail());
-            emailService.uploadDocumentsToDocument(user.getEmail(), project.getTitle());
-            log.info("Document upload email sent successfully to: {}", user.getEmail());
+        log.info("Sending document upload notification email to: {}", user.getEmail());
+        emailService.uploadDocumentsToDocument(user.getEmail(), project.getTitle());
+        log.info("Document upload email sent successfully to: {}", user.getEmail());
 
         return uploadedDocs;
     }
+
 
     // ========================
     // GET ALL DOCUMENTS FOR PROJECT
@@ -331,7 +333,6 @@ public class ProjectService {
         Project project = projectRepo.findById(projectId)
                 .orElseThrow(() -> new RuntimeException("Project not found"));
 
-        // Check if user is the owner
         if (!project.getUser().getId().equals(user.getId())) {
             throw new RuntimeException("You don't have permission to access project documents");
         }
@@ -348,11 +349,12 @@ public class ProjectService {
                 .collect(Collectors.toList());
     }
 
+
     // ========================
     // DELETE DOCUMENT
     // ========================
     @Transactional
-    @Caching(evict ={
+    @Caching(evict = {
             @CacheEvict(key = "'project:' + #documentId + '_projectDocuments'"),
             @CacheEvict(key = "'user:' + #userId + '_documents'")
     })
@@ -362,7 +364,6 @@ public class ProjectService {
         ProjectDocument document = projectDocumentRepo.findByIdAndIsDeletedFalse(documentId)
                 .orElseThrow(() -> new RuntimeException("Document not found"));
 
-        // Check if user is the owner
         if (!document.getProject().getUser().getId().equals(userId)) {
             throw new RuntimeException("Only project owner can delete documents");
         }
@@ -372,143 +373,22 @@ public class ProjectService {
         log.info("Document marked as deleted - ID: {}", documentId);
     }
 
-    // ========================
-    // HELPER: Upload Documents
-    // ========================
-    private List<ProjectDocumentResponseDTO> uploadDocumentsForProject(Project project, User user, List<MultipartFile> files, String description) throws IOException {
-        List<ProjectDocumentResponseDTO> uploadedDocuments = new ArrayList<>();
-
-        log.info("📤 Starting upload of {} files for project {}", files.size(), project.getId());
-
-        for (MultipartFile file : files) {
-            if (file.isEmpty()) {
-                log.warn("⚠️ Skipping empty file");
-                continue;
-            }
-
-            log.info("📄 Processing file: {} (size: {} bytes, type: {})",
-                    file.getOriginalFilename(), file.getSize(), file.getContentType());
-
-            // Validate file size
-            if (file.getSize() > MAX_FILE_SIZE) {
-                String errorMsg = "File " + file.getOriginalFilename() + " exceeds maximum size of 50MB";
-                log.error("❌ {}", errorMsg);
-                throw new RuntimeException(errorMsg);
-            }
-
-            // Validate MIME type
-            String mimeType = file.getContentType();
-            if (mimeType == null || !MIME_TYPE_MAP.containsKey(mimeType)) {
-                String errorMsg = "Unsupported file type: " + mimeType + ". Supported types: PDF, Word, PowerPoint, Excel";
-                log.error("❌ {}", errorMsg);
-                throw new RuntimeException(errorMsg);
-            }
-
-            try {
-                byte[] fileBytes = file.getBytes();
-                String base64Content = Base64.getEncoder().encodeToString(fileBytes);
-                DocumentType docType = MIME_TYPE_MAP.get(mimeType);
-
-                String fileName = UUID.randomUUID().toString() + getFileExtension(file.getOriginalFilename());
-
-                log.info("🔄 Creating document entity for: {}", file.getOriginalFilename());
-
-                ProjectDocument document = ProjectDocument.builder()
-                        .fileName(fileName)
-                        .originalFileName(file.getOriginalFilename())
-                        .fileContent(base64Content)
-                        .documentType(docType)
-                        .fileSize(file.getSize())
-                        .mimeType(mimeType)
-                        .description(description)
-                        .project(project)
-                        .uploadedBy(user)
-                        .createdAt(LocalDateTime.now())
-                        .updatedAt(LocalDateTime.now())
-                        .build();
-
-                log.info("💾 Saving document to database...");
-                ProjectDocument savedDocument = projectDocumentRepo.save(document);
-
-                log.info("✅ Document uploaded successfully - ID: {}, Name: {}, Size: {} bytes, Type: {}",
-                        savedDocument.getId(), savedDocument.getOriginalFileName(),
-                        savedDocument.getFileSize(), savedDocument.getDocumentType());
-
-                uploadedDocuments.add(buildDocumentResponse(savedDocument));
-
-            } catch (IOException e) {
-                log.error("❌ Failed to process file: {}", file.getOriginalFilename(), e);
-                throw new RuntimeException("Failed to process file: " + file.getOriginalFilename());
-            }
-        }
-
-        log.info("🎉 Upload complete! Total documents uploaded: {}", uploadedDocuments.size());
-        return uploadedDocuments;
-    }
 
     // ========================
-    // HELPER: Build Project Response
+    // SEARCH PROJECTS
     // ========================
-    private ProjectResponseDTO buildProjectResponse(Project project, boolean includeDocuments) {
-        log.info("🔨 Building project response for project ID: {}, includeDocuments: {}",
-                project.getId(), includeDocuments);
-
-        // ✅ FIX: Query documents directly from repository instead of lazy-loaded collection
-        List<ProjectDocument> documents = new ArrayList<>();
-        long documentCount = 0;
-
-        if (includeDocuments) {
-            documents = projectDocumentRepo.findByProjectAndIsDeletedFalse(project);
-            documentCount = documents.size();
-            log.info("📊 Found {} active documents for project {}", documentCount, project.getId());
-        } else {
-            documentCount = projectDocumentRepo.countByProjectAndIsDeletedFalse(project);
-            log.info("📊 Document count for project {}: {}", project.getId(), documentCount);
-        }
-
-        ProjectResponseDTO.ProjectResponseDTOBuilder builder = ProjectResponseDTO.builder()
-                .id(project.getId())
-                .name(project.getTitle())
-                .description(project.getDescription())
-                .ownerId(project.getUser().getId())
-                .ownerEmail(project.getUser().getEmail())
-                .ownerName(project.getUser().getFirstName() + " " + project.getUser().getLastName())
-                .status(project.getStatus())
-                .startDate(project.getStartDate())
-                .endDate(project.getEndDate())
-                .createdAt(project.getCreatedAt())
-                .updatedAt(project.getUpdatedAt())
-                .documentCount(documentCount);
-
-        if (includeDocuments && !documents.isEmpty()) {
-            List<ProjectDocumentResponseDTO> documentDTOs = documents.stream()
-                    .map(this::buildDocumentResponse)
-                    .collect(Collectors.toList());
-            builder.documents(documentDTOs);
-            log.info("📎 Added {} documents to response", documentDTOs.size());
-        } else {
-            builder.documents(new ArrayList<>()); // Empty list instead of null
-        }
-
-        ProjectResponseDTO response = builder.build();
-        log.info("✅ Project response built successfully - Documents included: {}", response.getDocumentCount());
-
-        return response;
-    }
-
-
-    // saerch for project
     @Transactional(readOnly = true)
-    @Cacheable(key = "'user:' + #userId + '_projects'")
-    public List<ProjectResponseDTO> searchForProject(UUID userId, String keyword){
+    @Cacheable(key = "'user:' + #userId + '_search:' + #keyword")
+    public List<ProjectResponseDTO> searchForProject(UUID userId, String keyword) {
         log.info("Searching projects for user ID: {} with keyword: {}", userId, keyword);
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> {
                     log.error("User not found with ID: {}", userId);
                     return new RuntimeException("User not found");
                 });
+
         List<Project> projects = projectRepo.searchByUserAndKeyword(user, keyword);
-        if (projects == null || projects.isEmpty()){
+        if (projects == null || projects.isEmpty()) {
             log.warn("No projects found for user ID: {} with keyword: {}", userId, keyword);
             return List.of();
         }
@@ -521,51 +401,19 @@ public class ProjectService {
         return response;
     }
 
-    // ========================
-    // HELPER: Build Document Response
-    // ========================
-    private ProjectDocumentResponseDTO buildDocumentResponse(ProjectDocument document) {
-        return ProjectDocumentResponseDTO.builder()
-                .id(document.getId())
-                .fileName(document.getFileName())
-                .originalFileName(document.getOriginalFileName())
-                .documentType(document.getDocumentType())
-                .fileSize(document.getFileSize())
-                .mimeType(document.getMimeType())
-                .description(document.getDescription())
-                .projectId(document.getProject().getId())
-                .projectName(document.getProject().getTitle())
-                .uploadedById(document.getUploadedBy().getId())
-                .uploadedByEmail(document.getUploadedBy().getEmail())
-                .createdAt(document.getCreatedAt())
-                .updatedAt(document.getUpdatedAt())
-                .build();
-    }
 
     // ========================
-    // HELPER: Get File Extension
-    // ========================
-    private String getFileExtension(String filename) {
-        if (filename != null && filename.contains(".")) {
-            return filename.substring   (filename.lastIndexOf("."));
-        }
-        return "";
-    }
-
-    // ========================
-    // NEW METHODS FOR SUMMARY AND STATS
+    // SUMMARY AND STATS
     // ========================
 
     @Transactional(readOnly = true)
-    @Cacheable(key = "'user:' + #userId + '_projects'")
+    @Cacheable(key = "'user:' + #userId + '_projectSummaries'")
     public List<ProjectSummaryDTO> viewAllProjectsSummary(UUID userId) {
         log.info("Fetching project summaries for user ID: {}", userId);
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        List<Project> projects = projectRepo.findByUser(user);
-
-        return projects.stream()
+        return projectRepo.findByUser(user).stream()
                 .map(project -> {
                     long daysLeft = 0;
                     if (project.getEndDate() != null) {
@@ -607,15 +455,13 @@ public class ProjectService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(key = "'user:' + #userId + '_overdueProjectCount'")
+    @Cacheable(key = "'user:' + #userId + '_overdueProjects'")
     public List<ProjectSummaryDTO> viewOverdueProjects(UUID userId) {
         log.info("Fetching overdue projects for user ID: {}", userId);
         User user = userRepo.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        List<Project> projects = projectRepo.findByUser(user);
-
-        return projects.stream()
+        return projectRepo.findByUser(user).stream()
                 .filter(project -> project.getEndDate() != null && project.getEndDate().isBefore(LocalDate.now()))
                 .map(project -> {
                     long daysLeft = ChronoUnit.DAYS.between(LocalDate.now(), project.getEndDate());
@@ -628,5 +474,150 @@ public class ProjectService {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+
+    // ========================
+    // HELPER: Upload Documents
+    // ========================
+    private List<ProjectDocumentResponseDTO> uploadDocumentsForProject(Project project, User user, List<MultipartFile> files, String description) throws IOException {
+        List<ProjectDocumentResponseDTO> uploadedDocuments = new ArrayList<>();
+
+        log.info("📤 Starting upload of {} files for project {}", files.size(), project.getId());
+
+        for (MultipartFile file : files) {
+            if (file.isEmpty()) {
+                log.warn("⚠️ Skipping empty file");
+                continue;
+            }
+
+            log.info("📄 Processing file: {} (size: {} bytes, type: {})",
+                    file.getOriginalFilename(), file.getSize(), file.getContentType());
+
+            if (file.getSize() > MAX_FILE_SIZE) {
+                String errorMsg = "File " + file.getOriginalFilename() + " exceeds maximum size of 50MB";
+                log.error("❌ {}", errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+
+            String mimeType = file.getContentType();
+            if (mimeType == null || !MIME_TYPE_MAP.containsKey(mimeType)) {
+                String errorMsg = "Unsupported file type: " + mimeType + ". Supported types: PDF, Word, PowerPoint, Excel";
+                log.error("❌ {}", errorMsg);
+                throw new RuntimeException(errorMsg);
+            }
+
+            try {
+                byte[] fileBytes = file.getBytes();
+                String base64Content = Base64.getEncoder().encodeToString(fileBytes);
+                DocumentType docType = MIME_TYPE_MAP.get(mimeType);
+                String fileName = UUID.randomUUID().toString() + getFileExtension(file.getOriginalFilename());
+
+                log.info("🔄 Creating document entity for: {}", file.getOriginalFilename());
+
+                ProjectDocument document = ProjectDocument.builder()
+                        .fileName(fileName)
+                        .originalFileName(file.getOriginalFilename())
+                        .fileContent(base64Content)
+                        .documentType(docType)
+                        .fileSize(file.getSize())
+                        .mimeType(mimeType)
+                        .description(description)
+                        .project(project)
+                        .uploadedBy(user)
+                        .createdAt(LocalDateTime.now())
+                        .updatedAt(LocalDateTime.now())
+                        .build();
+
+                log.info("💾 Saving document to database...");
+                ProjectDocument savedDocument = projectDocumentRepo.save(document);
+
+                log.info("✅ Document uploaded - ID: {}, Name: {}, Size: {} bytes, Type: {}",
+                        savedDocument.getId(), savedDocument.getOriginalFileName(),
+                        savedDocument.getFileSize(), savedDocument.getDocumentType());
+
+                uploadedDocuments.add(buildDocumentResponse(savedDocument));
+
+            } catch (IOException e) {
+                log.error("❌ Failed to process file: {}", file.getOriginalFilename(), e);
+                throw new RuntimeException("Failed to process file: " + file.getOriginalFilename());
+            }
+        }
+
+        log.info("🎉 Upload complete! Total documents uploaded: {}", uploadedDocuments.size());
+        return uploadedDocuments;
+    }
+
+
+    // ========================
+    // HELPER: Build Project Response
+    // ========================
+    private ProjectResponseDTO buildProjectResponse(Project project, boolean includeDocuments) {
+        List<ProjectDocument> documents = new ArrayList<>();
+        long documentCount = 0;
+
+        if (includeDocuments) {
+            documents = projectDocumentRepo.findByProjectAndIsDeletedFalse(project);
+            documentCount = documents.size();
+        } else {
+            documentCount = projectDocumentRepo.countByProjectAndIsDeletedFalse(project);
+        }
+
+        ProjectResponseDTO.ProjectResponseDTOBuilder builder = ProjectResponseDTO.builder()
+                .id(project.getId())
+                .name(project.getTitle())
+                .description(project.getDescription())
+                .ownerId(project.getUser().getId())
+                .ownerEmail(project.getUser().getEmail())
+                .ownerName(project.getUser().getFirstName() + " " + project.getUser().getLastName())
+                .status(project.getStatus())
+                .startDate(project.getStartDate())
+                .endDate(project.getEndDate())
+                .createdAt(project.getCreatedAt())
+                .updatedAt(project.getUpdatedAt())
+                .documentCount(documentCount);
+
+        if (includeDocuments && !documents.isEmpty()) {
+            builder.documents(documents.stream()
+                    .map(this::buildDocumentResponse)
+                    .collect(Collectors.toList()));
+        } else {
+            builder.documents(new ArrayList<>());
+        }
+
+        return builder.build();
+    }
+
+
+    // ========================
+    // HELPER: Build Document Response
+    // ========================
+    private ProjectDocumentResponseDTO buildDocumentResponse(ProjectDocument document) {
+        return ProjectDocumentResponseDTO.builder()
+                .id(document.getId())
+                .fileName(document.getFileName())
+                .originalFileName(document.getOriginalFileName())
+                .documentType(document.getDocumentType())
+                .fileSize(document.getFileSize())
+                .mimeType(document.getMimeType())
+                .description(document.getDescription())
+                .projectId(document.getProject().getId())
+                .projectName(document.getProject().getTitle())
+                .uploadedById(document.getUploadedBy().getId())
+                .uploadedByEmail(document.getUploadedBy().getEmail())
+                .createdAt(document.getCreatedAt())
+                .updatedAt(document.getUpdatedAt())
+                .build();
+    }
+
+
+    // ========================
+    // HELPER: Get File Extension
+    // ========================
+    private String getFileExtension(String filename) {
+        if (filename != null && filename.contains(".")) {
+            return filename.substring(filename.lastIndexOf("."));
+        }
+        return "";
     }
 }
