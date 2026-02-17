@@ -1,38 +1,11 @@
-name: Docker Build and Push
+# 4️⃣ Build Docker image
+- name: Build Docker image
+  run: |
+    docker build \
+      --file Dockerfile \
+      --tag cyrilvibes/nova-backend:latest \
+      .
 
-# Trigger workflow on push to master
-on:
-  push:
-    branches: [ "master" ]
-
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-
-    steps:
-      # 1️⃣ Checkout the repository
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # 2️⃣ Make Maven wrapper executable
-      - name: Make mvnw executable
-        run: chmod +x mvnw
-
-      # 3️⃣ Log in to Docker Hub
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      # 4️⃣ Build Docker image
-      - name: Build Docker image
-        run: |
-          docker build \
-            --file Dockerfile \
-            --tag yourdockerhubusername/nova-backend:latest \
-            .
-
-      # 5️⃣ Push Docker image to Docker Hub
-      - name: Push Docker image
-        run: docker push yourdockerhubusername/nova-backend:latest
+# 5️⃣ Push Docker image to Docker Hub
+- name: Push Docker image
+  run: docker push cyrilvibes/nova-backend:latest

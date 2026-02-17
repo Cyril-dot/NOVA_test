@@ -1,38 +1,39 @@
-name: Build and Push Docker Image
+name: Docker Build and Push
 
-# Trigger on push to master branch
+# Trigger workflow on push to master
 on:
   push:
-    branches: ["master"]
+    branches: [ "master" ]
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository code
-      - name: Checkout repository
+      # 1️⃣ Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Set up Java 17 (for Maven builds)
-      - name: Set up Java 17
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
+      # 2️⃣ Make Maven wrapper executable
+      - name: Make mvnw executable
+        run: chmod +x mvnw
 
-      # 3️⃣ Log in to Docker Hub using personal access token
+      # 3️⃣ Log in to Docker Hub
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 4️⃣ Build and push Docker image
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: cyrilvibes/nova-backend:latest
+      # 4️⃣ Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            --file Dockerfile \
+            --tag cyrilvibes/nova-backend:latest \
+            --pull \
+            .
+
+      # 5️⃣ Push Docker image to Docker Hub
+      - name: Push Docker image
+        run: docker push cyrilvibes/nova-backend:latest

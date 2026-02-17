@@ -1,5 +1,18 @@
-.git
-.gitignore
-node_modules
+# Maven target folder
 target/
+
+# Environment variables
 .env
+.env.local
+*.env
+
+# Node modules
+node_modules/
+
+# IDE files
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
