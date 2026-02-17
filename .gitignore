@@ -1,169 +1,38 @@
-# ==========================
-# Compiled class files
-# ==========================
-*.class
+name: Docker Build and Push
 
-# ==========================
-# Log files
-# ==========================
-*.log
+# Trigger workflow on push to master
+on:
+  push:
+    branches: [ "master" ]
 
-# ==========================
-# BlueJ files
-# ==========================
-*.ctxt
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
 
-# ==========================
-# Mobile Tools for Java (J2ME)
-# ==========================
-.mtj.tmp/
+    steps:
+      # 1️⃣ Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-# ==========================
-# Package Files
-# ==========================
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
+      # 2️⃣ Make Maven wrapper executable
+      - name: Make mvnw executable
+        run: chmod +x mvnw
 
-# ==========================
-# Virtual machine crash logs
-# ==========================
-hs_err_pid*
-replay_pid*
+      # 3️⃣ Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-# ==========================
-# Maven
-# ==========================
-target/
-pom.xml.tag
-pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
-.mvn/wrapper/maven-wrapper.jar
+      # 4️⃣ Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build \
+            --file Dockerfile \
+            --tag yourdockerhubusername/nova-backend:latest \
+            .
 
-# ==========================
-# Gradle
-# ==========================
-.gradle
-**/build/
-!src/**/build/
-gradle-app.setting
-!gradle-wrapper.jar
-!gradle-wrapper.properties
-.gradletasknamecache
-
-# ==========================
-# IntelliJ IDEA
-# ==========================
-.idea/
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
-# ==========================
-# Eclipse
-# ==========================
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-# ==========================
-# NetBeans
-# ==========================
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-
-# ==========================
-# VS Code
-# ==========================
-.vscode/
-
-# ==========================
-# Mac OS
-# ==========================
-.DS_Store
-
-# ==========================
-# Windows
-# ==========================
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# ==========================
-# Environment Variables & Secrets (CRITICAL!)
-# ==========================
-.env
-.env.local
-.env.*.local
-*.env
-application-secrets.properties
-application-local.properties
-src/main/resources/application-local.properties
-src/main/resources/application-dev.properties
-
-# ==========================
-# Spring Boot
-# ==========================
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**
-!**/src/test/**
-
-# ==========================
-# Database
-# ==========================
-*.db
-*.sqlite
-*.sqlite3
-
-# ==========================
-# Logs (already covered above but kept for clarity)
-# ==========================
-logs/
-spring.log
-
-# ==========================
-# Temporary files
-# ==========================
-*.tmp
-*.temp
-*.swp
-*.swo
-*~
-
-# ==========================
-# Node modules (if using frontend)
-# ==========================
-node_modules/
-npm-debug.log
-yarn-error.log
-
-
-# ==========================
-# Docker & CI/CD
-# ==========================
-!Dockerfile
-!.dockerignore
-!.github/
-!.github/workflows/
+      # 5️⃣ Push Docker image to Docker Hub
+      - name: Push Docker image
+        run: docker push yourdockerhubusername/nova-backend:latest
