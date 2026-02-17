@@ -1,13 +1,19 @@
 # =========================
 # Stage 1: Build the app
 # =========================
-FROM maven:3.9.9-eclipse-temurin-17 AS builder
+FROM maven:3.9.9-eclipse-temurin-21 AS builder
 
 WORKDIR /app
+
+# Set Maven memory options
+ENV MAVEN_OPTS="-Xmx1024m"
 
 # Copy Maven wrapper and settings
 COPY mvnw .
 COPY .mvn .mvn
+
+# Make mvnw executable
+RUN chmod +x ./mvnw
 
 # Copy pom.xml first to cache dependencies
 COPY pom.xml .
@@ -24,7 +30,7 @@ RUN ./mvnw clean package -DskipTests
 # =========================
 # Stage 2: Run the app
 # =========================
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
