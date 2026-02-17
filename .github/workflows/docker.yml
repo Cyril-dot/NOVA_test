@@ -1,17 +1,15 @@
 name: Docker Build and Push
 
-# Trigger this workflow on push to main branch
 on:
   push:
-    branches: [ "master" ]
-
+    branches: [ "master" ]  # adjust if your main branch is 'main'
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout the repository code
+      # 1️⃣ Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -27,5 +25,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: yourdockerhubusername/nova-backend:latest
+
+          # Cache last image to speed up builds (especially Maven dependencies)
+          cache-from: type=registry,ref=yourdockerhubusername/nova-backend:latest
+          cache-to: type=registry,ref=yourdockerhubusername/nova-backend:latest,mode=max
