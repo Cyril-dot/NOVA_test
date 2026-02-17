@@ -5,7 +5,7 @@ FROM maven:3.9.9-eclipse-temurin-17 AS builder
 
 WORKDIR /app
 
-# Copy Maven wrapper if used
+# Copy Maven wrapper
 COPY mvnw .
 COPY .mvn .mvn
 
@@ -13,13 +13,13 @@ COPY .mvn .mvn
 COPY pom.xml .
 
 # Download dependencies only (cache them)
-RUN ./mvnw dependency:go-offline -B || mvn dependency:go-offline -B
+RUN ./mvnw dependency:go-offline -B --batch-mode
 
 # Copy source code
 COPY src ./src
 
 # Build JAR without tests
-RUN ./mvnw clean package -DskipTests || mvn clean package -DskipTests
+RUN ./mvnw clean package -DskipTests --batch-mode
 
 # =========================
 # Stage 2: Run the app
