@@ -10,7 +10,7 @@ import java.time.Instant;
 
 @Data
 @Entity
-@Table(name = "refresh_tokens") // match the actual DB table
+@Table(name = "refresh_tokens")
 @AllArgsConstructor
 @NoArgsConstructor
 public class RefreshToken {
@@ -19,7 +19,7 @@ public class RefreshToken {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(name = "token", nullable = false, unique = true, columnDefinition = "VARCHAR(1000)")
     private String token;
 
     @OneToOne(fetch = FetchType.EAGER)
