@@ -160,15 +160,15 @@ public class SecurityConfig {
                 String encodedAccessToken = URLEncoder.encode(encryptedAccessToken, StandardCharsets.UTF_8);
                 String encodedRefreshToken = URLEncoder.encode(encryptedRefreshToken, StandardCharsets.UTF_8);
 
-                // Build redirect URL
+                // ⭐ IMPORTANT: Redirect to /auth (where mounted hook runs), NOT /dashboard
                 String redirectUrl = String.format(
-                        "%s/dashboard?accessToken=%s&refreshToken=%s",
+                        "%s/auth?accessToken=%s&refreshToken=%s",
                         frontendUrl,
                         encodedAccessToken,
                         encodedRefreshToken
                 );
 
-                log.info("🚀 Redirecting to: {}/dashboard", frontendUrl);
+                log.info("🚀 Redirecting to: {}/auth with tokens", frontendUrl);
                 log.info("✅ [OAUTH2] User {} logged in successfully", user.getEmail());
 
                 response.sendRedirect(redirectUrl);
@@ -176,7 +176,7 @@ public class SecurityConfig {
             } catch (Exception ex) {
                 log.error("❌ OAuth2 Success Handler Error: {}", ex.getMessage(), ex);
                 try {
-                    response.sendRedirect(frontendUrl + "/login?error=oauth_failed");
+                    response.sendRedirect(frontendUrl + "/auth?error=oauth_failed");
                 } catch (Exception redirectEx) {
                     log.error("Failed to send error redirect: {}", redirectEx.getMessage());
                 }
