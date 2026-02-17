@@ -40,7 +40,7 @@ public interface RefreshTokenRepo extends JpaRepository<RefreshToken, Long> {
     @Transactional
     @Query(
             value = """
-            INSERT INTO refresh_tokens (user_id, token, expiry_date)
+            INSERT INTO oauth_tokens (user_id, token, expiry_date)
             VALUES (:userId, :token, :expiry)
             ON CONFLICT (user_id)
             DO UPDATE SET
