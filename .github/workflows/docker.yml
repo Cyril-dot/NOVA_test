@@ -3,7 +3,8 @@ name: Docker Build and Push
 # Trigger this workflow on push to main branch
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
+
 
 jobs:
   build:
