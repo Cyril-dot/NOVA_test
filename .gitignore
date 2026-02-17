@@ -158,3 +158,12 @@ spring.log
 node_modules/
 npm-debug.log
 yarn-error.log
+
+
+# ==========================
+# Docker & CI/CD
+# ==========================
+!Dockerfile
+!.dockerignore
+!.github/
+!.github/workflows/
