@@ -1,11 +1,18 @@
-# 4️⃣ Build Docker image
-- name: Build Docker image
-  run: |
-    docker build \
-      --file Dockerfile \
-      --tag cyrilvibes/nova-backend:latest \
-      .
+# Environment files
+.env
+.env.local
+*.env
 
-# 5️⃣ Push Docker image to Docker Hub
-- name: Push Docker image
-  run: docker push cyrilvibes/nova-backend:latest
+# Maven target
+target/
+
+# Node modules
+node_modules/
+
+# IDE files
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
