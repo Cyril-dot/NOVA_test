@@ -111,44 +111,60 @@ public class HuggingFaceAiServiceImpl implements HuggingFaceAiService {
     public AiModelResponse answerQuestion(String question, String context) throws Exception {
         log.info("Answering question: {}", question);
 
-        String relevantContext = extractRelevantContext(question, context, 400);
-        log.debug("Relevant context length: {}", relevantContext.length());
+        // Use a larger context window for QA — relevance extraction is helpful
+        // but we want enough context to actually find the answer
+        String relevantContext = extractRelevantContext(question, context, 1200);
+        log.debug("Relevant context length: {} words", relevantContext.split("\\s+").length);
 
-        // Use OpenAI-compatible format
-        String prompt = String.format("Context: %s\n\nQuestion: %s\n\nAnswer:", relevantContext, question);
+        // Use a clear system + user message structure so the model understands its role
+        Map<String, Object> systemMessage = new HashMap<>();
+        systemMessage.put("role", "system");
+        systemMessage.put("content",
+                "You are a helpful assistant that answers questions based strictly on the provided document context. " +
+                        "If the answer is not in the context, say so clearly. Be concise and accurate.");
 
-        Map<String, Object> message = new HashMap<>();
-        message.put("role", "user");
-        message.put("content", prompt);
+        Map<String, Object> userMessage = new HashMap<>();
+        userMessage.put("role", "user");
+        userMessage.put("content",
+                "Document context:\n" + relevantContext +
+                        "\n\n---\nQuestion: " + question +
+                        "\n\nPlease answer based only on the document context above.");
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("model", qaModel);
-        payload.put("messages", new Object[]{message});
-        payload.put("max_tokens", 150);
-        payload.put("temperature", 0.1);
+        // ✅ KEY FIX: use chatModel (LLM) instead of qaModel (which may be an
+        //    extractive QA model that doesn't support /v1/chat/completions)
+        payload.put("model", chatModel);
+        payload.put("messages", new Object[]{ systemMessage, userMessage });
+        payload.put("max_tokens", 300);
+        payload.put("temperature", 0.2);  // Low temp = more factual/grounded answers
 
         String endpoint = "/v1/chat/completions";
-        String response = makeApiCall(endpoint, payload, 30);
 
+        // Increased timeout from 30s to 60s — HuggingFace cold-starts are slow
+        String response = makeApiCall(endpoint, payload, 60);
         log.debug("Received response from QA model: {}", response);
 
         JsonNode rootNode = objectMapper.readTree(response);
 
         String answer;
-        if (rootNode.has("choices") && rootNode.get("choices").isArray() && rootNode.get("choices").size() > 0) {
+        if (rootNode.has("choices") &&
+                rootNode.get("choices").isArray() &&
+                rootNode.get("choices").size() > 0) {
+
             JsonNode firstChoice = rootNode.get("choices").get(0);
-            answer = firstChoice.get("message").get("content").asText();
+            answer = firstChoice.get("message").get("content").asText().trim();
+
         } else {
-            log.warn("QA model couldn't find answer in context");
-            answer = "No clear answer found in the document.";
+            log.warn("QA model returned unexpected format: {}", response);
+            answer = "I couldn't find a clear answer in the document for that question.";
         }
 
-        log.info("QA completed. Answer: '{}'", answer);
+        log.info("QA completed. Answer length: {} chars", answer.length());
 
         return AiModelResponse.builder()
                 .response(answer)
-                .confidenceScore(0.8)
-                .modelUsed(qaModel)
+                .confidenceScore(0.85)
+                .modelUsed(chatModel)  // reflects the actual model used
                 .build();
     }
 

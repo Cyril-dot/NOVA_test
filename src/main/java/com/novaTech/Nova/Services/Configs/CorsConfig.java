@@ -26,8 +26,9 @@ public class CorsConfig {
                 "http://127.0.0.1:5500",
                 "http://localhost:8081",
                 "http://192.168.8.127:8081",
-                "https://novaspace-teal.vercel.app",       // removed trailing slash
-                "https://novaspace-3xjlmad36-cyril-dots-projects.vercel.app"
+                "https://novaspace-teal.vercel.app",
+                "https://novaspace-3xjlmad36-cyril-dots-projects.vercel.app",
+                "https://novaspace-teal.vercel.app"
         ));
 
         // Allowed methods
