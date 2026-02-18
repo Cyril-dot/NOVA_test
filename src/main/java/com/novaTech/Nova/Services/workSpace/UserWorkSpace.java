@@ -822,7 +822,8 @@ public class UserWorkSpace {
                         doc.getTitle(),
                         doc.getDescription(),
                         new String(doc.getWorkSpaceData(), StandardCharsets.UTF_8),
-                        doc.getUser().getUsername()
+                        doc.getUser().getUsername(),
+                        doc.getDocType()
                 ))
                 .collect(Collectors.toList());
     }
