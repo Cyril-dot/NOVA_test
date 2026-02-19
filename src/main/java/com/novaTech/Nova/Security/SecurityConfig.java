@@ -85,10 +85,16 @@ public class SecurityConfig {
                                 "/assets/**",
                                 "/.well-known/**"
                         ).permitAll()
+
+                        // ✅ Public meeting endpoints — declared BEFORE the broad authenticated rule
                         .requestMatchers("/api/meetings/join/guest").permitAll()
+                        .requestMatchers("/api/meetings/daily-token/guest").permitAll()
                         .requestMatchers("/api/meetings/validate/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/meetings/{meetingCode}").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/meetings/{code}").permitAll()
+
+                        // 🔒 All other meeting endpoints require authentication
                         .requestMatchers("/api/meetings/**").authenticated()
+
                         .requestMatchers("/api/v1/chat/**").authenticated()
                         .anyRequest().authenticated()
                 )
@@ -148,7 +154,6 @@ public class SecurityConfig {
                 User user = userRepo.findByEmail(email)
                         .orElseThrow(() -> new RuntimeException("User not found after OAuth2 login"));
 
-                // Generate encrypted tokens
                 String encryptedAccessToken = tokenService.generateAccessToken(user);
                 var refreshTokenEntity = tokenService.generateRefreshToken(user);
                 String encryptedRefreshToken = refreshTokenEntity.getToken();
@@ -156,11 +161,9 @@ public class SecurityConfig {
                 log.info("✅ Tokens generated - Access Token length: {}, Refresh Token length: {}",
                         encryptedAccessToken.length(), encryptedRefreshToken.length());
 
-                // URL encode tokens
                 String encodedAccessToken = URLEncoder.encode(encryptedAccessToken, StandardCharsets.UTF_8);
                 String encodedRefreshToken = URLEncoder.encode(encryptedRefreshToken, StandardCharsets.UTF_8);
 
-                // ⭐ IMPORTANT: Redirect to /auth (where mounted hook runs), NOT /dashboard
                 String redirectUrl = String.format(
                         "%s/auth?accessToken=%s&refreshToken=%s",
                         frontendUrl,
