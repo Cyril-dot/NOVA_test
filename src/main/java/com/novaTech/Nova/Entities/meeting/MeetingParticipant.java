@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "meeting_participants")
+@Table(name = "nova_meeting_participants")   // ← renamed
 @Data
 @Builder
 @NoArgsConstructor
@@ -40,45 +40,53 @@ public class MeetingParticipant {
     private String guestEmail;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean isGuest = false;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ParticipantRole role; // HOST, MODERATOR, PARTICIPANT
 
-    // WebRTC Session Info
-    @Column(unique = true)
-    private String sessionId; // WebSocket session ID
+    // ── WebRTC / Daily session info ───────────────────────────────────────────
+    // sessionId and peerId are still useful for presence tracking via your
+    // WebSocket handler even though Daily handles the actual video/audio.
 
     @Column(unique = true)
-    private String peerId; // WebRTC peer ID
+    private String sessionId; // WebSocket session ID (server-side presence)
 
-    // Participant status
+    @Column(unique = true)
+    private String peerId;    // WebRTC peer ID (Daily participant identifier)
+
+    // ── Participant media status ───────────────────────────────────────────────
+    // These mirror what Daily reports so the dashboard can show accurate icons
+    // without having to call the Daily API directly.
+
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean videoEnabled = true;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean audioEnabled = true;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean screenSharing = false;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean isOnline = false;
 
-    // Connection info
+    // ── Connection info ───────────────────────────────────────────────────────
+
     @Column
     private String ipAddress;
 
     @Column
     private String userAgent;
 
-    // Timestamps
+    // ── Timestamps ────────────────────────────────────────────────────────────
+
     @Column(nullable = false)
     private LocalDateTime joinedAt;
 
@@ -86,7 +94,7 @@ public class MeetingParticipant {
     private LocalDateTime leftAt;
 
     @Column
-    private Long durationSeconds; // Total time in meeting
+    private Long durationSeconds; // Total seconds the participant was in the meeting
 
     @PrePersist
     protected void onCreate() {
@@ -95,17 +103,20 @@ public class MeetingParticipant {
         }
     }
 
-    // Helper methods
+    // ── Helper methods ────────────────────────────────────────────────────────
+
     public String getDisplayName() {
         if (isGuest) {
             return guestName != null ? guestName : "Guest";
         }
-        return user != null ? user.getFirstName() + " " + user.getLastName() : "Unknown";
+        return user != null
+                ? user.getFirstName() + " " + user.getLastName()
+                : "Unknown";
     }
 
     public void leave() {
-        leftAt = LocalDateTime.now();
-        isOnline = false;
+        leftAt    = LocalDateTime.now();
+        isOnline  = false;
         if (joinedAt != null) {
             durationSeconds = java.time.Duration.between(joinedAt, leftAt).getSeconds();
         }

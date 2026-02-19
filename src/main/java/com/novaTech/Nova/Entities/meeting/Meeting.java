@@ -14,7 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Table(name = "meetings")
+@Table(name = "nova_meetings")   // ← renamed
 @Data
 @Builder
 @NoArgsConstructor
@@ -52,53 +52,74 @@ public class Meeting {
     private MeetingStatus status;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Integer maxParticipants = 50;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean isPublic = false;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean requiresPassword = false;
 
     @Column
     private String password;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean allowGuests = true;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean recordingEnabled = false;
 
     @Column
     private String recordingUrl;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean videoEnabled = true;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean audioEnabled = true;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean screenShareEnabled = true;
 
     @Column(nullable = false)
-    @Builder.Default  // ← ADD THIS
+    @Builder.Default
     private Boolean chatEnabled = true;
 
-    // Participants tracking
+    // ── Daily.co fields ───────────────────────────────────────────────────────
+
+    /**
+     * The full Daily.co room URL for this meeting.
+     * e.g. https://noav.daily.co/abc-def-ghi
+     * Populated by MeetingService when the Daily room is created.
+     * The frontend uses this URL to initialise callFrame.join({ url: roomUrl }).
+     */
+    @Column(name = "daily_room_url")
+    private String dailyRoomUrl;
+
+    /**
+     * The Daily.co room name (URL slug portion only).
+     * e.g. abc-def-ghi
+     * Used server-side when generating meeting tokens or deleting the room.
+     */
+    @Column(name = "daily_room_name")
+    private String dailyRoomName;
+
+    // ── Participants ──────────────────────────────────────────────────────────
+
     @OneToMany(mappedBy = "meeting", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default  // ← ADD THIS - MOST IMPORTANT!
+    @Builder.Default
     private Set<MeetingParticipant> participants = new HashSet<>();
 
-    // Timestamps
+    // ── Timestamps ────────────────────────────────────────────────────────────
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -116,7 +137,8 @@ public class Meeting {
         updatedAt = LocalDateTime.now();
     }
 
-    // Helper methods remain the same
+    // ── Helper methods ────────────────────────────────────────────────────────
+
     public void addParticipant(MeetingParticipant participant) {
         participants.add(participant);
         participant.setMeeting(this);

@@ -15,11 +15,31 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Meeting REST Controller
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Meeting REST Controller — Daily.co Edition
+ * ─────────────────────────────────────────────────────────────────────────────
  *
- * /api/meetings/join/guest  — no auth required  (guests)
- * /api/meetings/join        — JWT required       (registered users)
- * All other write endpoints — JWT required
+ * New endpoints added for Daily.co:
+ *
+ *   POST /api/meetings/daily-token
+ *     → Authenticated users call this after joinMeeting().
+ *       Returns { token, roomUrl, roomName, meetingCode, isOwner }.
+ *       The frontend passes `token` to callFrame.join({ token }) so Daily
+ *       knows the participant's display name and owner permissions.
+ *
+ *   POST /api/meetings/daily-token/guest
+ *     → Guests call this after joinMeeting/guest.
+ *       No JWT needed — permitted in Spring Security config.
+ *       Returns same shape as above.
+ *
+ * All existing endpoints are unchanged so nothing breaks.
+ *
+ * Security notes:
+ *   - /api/meetings/join/guest        → permitAll()  (existing)
+ *   - /api/meetings/validate/**       → permitAll()  (existing)
+ *   - /api/meetings/daily-token/guest → permitAll()  (NEW — add to SecurityConfig)
+ *   - Everything else                 → authenticated
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 @RestController
 @RequestMapping("/api/meetings")
@@ -29,9 +49,11 @@ public class MeetingController {
 
     private final MeetingService meetingService;
 
-    // ========================
-    // CREATE MEETING
-    // ========================
+    // =========================================================================
+    //  CREATE MEETING
+    //  Now also creates the Daily.co room server-side so the API key never
+    //  has to be exposed in the frontend bundle.
+    // =========================================================================
     @PostMapping("/create")
     public ResponseEntity<?> createMeeting(@RequestBody CreateMeetingDTO dto) {
         try {
@@ -41,7 +63,7 @@ public class MeetingController {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Meeting created successfully",
-                    "data", response
+                    "data",    response
             ));
         } catch (Exception e) {
             log.error("Error creating meeting", e);
@@ -52,9 +74,10 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // START MEETING
-    // ========================
+    // =========================================================================
+    //  START MEETING
+    //  Flips status to ACTIVE and ensures the Daily room still exists.
+    // =========================================================================
     @PostMapping("/start/{meetingCode}")
     public ResponseEntity<?> startMeeting(@PathVariable String meetingCode) {
         try {
@@ -64,7 +87,7 @@ public class MeetingController {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Meeting started successfully",
-                    "data", response
+                    "data",    response
             ));
         } catch (Exception e) {
             log.error("Error starting meeting", e);
@@ -75,10 +98,9 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // JOIN MEETING — Authenticated users only
-    // Requires: Authorization: Bearer <jwt>
-    // ========================
+    // =========================================================================
+    //  JOIN MEETING — Authenticated user
+    // =========================================================================
     @PostMapping("/join")
     public ResponseEntity<?> joinMeeting(@RequestBody JoinMeetingDTO dto) {
         try {
@@ -88,7 +110,7 @@ public class MeetingController {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Joined meeting successfully",
-                    "data", response
+                    "data",    response
             ));
         } catch (Exception e) {
             log.error("Error joining meeting", e);
@@ -99,11 +121,11 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // JOIN MEETING — Guest (no auth required)
-    // Make sure Spring Security permits this path without a JWT:
-    //   .requestMatchers("/api/meetings/join/guest").permitAll()
-    // ========================
+    // =========================================================================
+    //  JOIN MEETING — Guest (no JWT required)
+    //  Ensure your SecurityConfig has:
+    //    .requestMatchers("/api/meetings/join/guest").permitAll()
+    // =========================================================================
     @PostMapping("/join/guest")
     public ResponseEntity<?> joinMeetingAsGuest(@RequestBody JoinMeetingDTO dto) {
         try {
@@ -112,7 +134,7 @@ public class MeetingController {
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Joined meeting as guest successfully",
-                    "data", response
+                    "data",    response
             ));
         } catch (Exception e) {
             log.error("Error joining meeting as guest", e);
@@ -123,9 +145,93 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // END MEETING
-    // ========================
+    // =========================================================================
+    //  GENERATE DAILY TOKEN — Authenticated user  (NEW)
+    //
+    //  Call this AFTER /join so the participant record exists in the DB.
+    //  The response contains:
+    //    token     — pass to callFrame.join({ token }) in the frontend
+    //    roomUrl   — the full Daily room URL (https://domain/roomname)
+    //    roomName  — just the room name portion
+    //    isOwner   — true if the caller is the meeting host
+    //
+    //  Frontend usage (Meeting.vue joinDailyRoom):
+    //    const res   = await fetch('/api/meetings/daily-token', { method: 'POST', body: { meetingCode } ... })
+    //    const { token, roomUrl } = res.data
+    //    await callFrame.join({ url: roomUrl, token })
+    // =========================================================================
+    @PostMapping("/daily-token")
+    public ResponseEntity<?> getDailyToken(@RequestBody Map<String, String> body) {
+        try {
+            String userEmail  = userPrincipal().getEmail();
+            String meetingCode = body.get("meetingCode");
+
+            if (meetingCode == null || meetingCode.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "message", "meetingCode is required"
+                ));
+            }
+
+            DailyTokenResponseDTO tokenResponse =
+                    meetingService.generateMeetingToken(userEmail, meetingCode);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data",    tokenResponse
+            ));
+        } catch (Exception e) {
+            log.error("Error generating Daily token", e);
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    // =========================================================================
+    //  GENERATE DAILY TOKEN — Guest  (NEW)
+    //  No JWT required.
+    //  Add to SecurityConfig:
+    //    .requestMatchers("/api/meetings/daily-token/guest").permitAll()
+    // =========================================================================
+    @PostMapping("/daily-token/guest")
+    public ResponseEntity<?> getDailyTokenAsGuest(@RequestBody JoinMeetingDTO dto) {
+        try {
+            if (dto.getGuestName() == null || dto.getGuestName().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "message", "guestName is required"
+                ));
+            }
+            if (dto.getMeetingCode() == null || dto.getMeetingCode().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "success", false,
+                        "message", "meetingCode is required"
+                ));
+            }
+
+            DailyTokenResponseDTO tokenResponse =
+                    meetingService.generateGuestMeetingToken(dto);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "data",    tokenResponse
+            ));
+        } catch (Exception e) {
+            log.error("Error generating guest Daily token", e);
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    // =========================================================================
+    //  END MEETING
+    //  Also deletes the Daily.co room, which immediately disconnects
+    //  all participants inside the Daily iframe.
+    // =========================================================================
     @PostMapping("/end/{meetingCode}")
     public ResponseEntity<?> endMeeting(@PathVariable String meetingCode) {
         try {
@@ -145,9 +251,9 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // GET MEETING DETAILS (public — guests need this too)
-    // ========================
+    // =========================================================================
+    //  GET MEETING DETAILS  (public — guests need this too)
+    // =========================================================================
     @GetMapping("/{meetingCode}")
     public ResponseEntity<?> getMeetingDetails(@PathVariable String meetingCode) {
         try {
@@ -155,7 +261,7 @@ public class MeetingController {
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "data", response
+                    "data",    response
             ));
         } catch (Exception e) {
             log.error("Error getting meeting details", e);
@@ -166,20 +272,21 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // GET USER'S MEETINGS
-    // ========================
+    // =========================================================================
+    //  GET USER'S MEETINGS
+    // =========================================================================
     @GetMapping("/my-meetings")
     public ResponseEntity<?> getMyMeetings(
             @RequestParam(required = false) MeetingStatus status) {
         try {
             String userEmail = userPrincipal().getEmail();
-            List<MeetingResponseDTO> meetings = meetingService.getUserMeetings(userEmail, status);
+            List<MeetingResponseDTO> meetings =
+                    meetingService.getUserMeetings(userEmail, status);
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "count", meetings.size(),
-                    "data", meetings
+                    "count",   meetings.size(),
+                    "data",    meetings
             ));
         } catch (Exception e) {
             log.error("Error getting user meetings", e);
@@ -190,9 +297,9 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // UPDATE PARTICIPANT MEDIA STATUS
-    // ========================
+    // =========================================================================
+    //  UPDATE PARTICIPANT MEDIA STATUS
+    // =========================================================================
     @PutMapping("/participant/status")
     public ResponseEntity<?> updateParticipantStatus(
             @RequestParam String sessionId,
@@ -215,9 +322,9 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // KICK PARTICIPANT (Moderator only)
-    // ========================
+    // =========================================================================
+    //  KICK PARTICIPANT (Moderator only)
+    // =========================================================================
     @DeleteMapping("/participant/{participantId}")
     public ResponseEntity<?> kickParticipant(@PathVariable UUID participantId) {
         try {
@@ -237,36 +344,35 @@ public class MeetingController {
         }
     }
 
-    // ========================
-    // VALIDATE MEETING CODE (public — guests need this before joining)
-    // ========================
+    // =========================================================================
+    //  VALIDATE MEETING CODE  (public — guests call this before joining)
+    // =========================================================================
     @GetMapping("/validate/{meetingCode}")
     public ResponseEntity<?> validateMeetingCode(@PathVariable String meetingCode) {
         try {
             MeetingResponseDTO response = meetingService.getMeetingDetails(meetingCode);
 
             return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "valid", true,
-                    "requiresPassword",  response.getRequiresPassword(),
-                    "allowGuests",       response.getAllowGuests(),
-                    "status",            response.getStatus(),
-                    "isFull",            response.getCurrentParticipants() >= response.getMaxParticipants()
+                    "success",          true,
+                    "valid",            true,
+                    "requiresPassword", response.getRequiresPassword(),
+                    "allowGuests",      response.getAllowGuests(),
+                    "status",           response.getStatus(),
+                    "isFull",           response.getCurrentParticipants() >= response.getMaxParticipants()
             ));
         } catch (Exception e) {
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "valid", false,
+                    "valid",   false,
                     "message", e.getMessage()
             ));
         }
     }
 
-    // ========================
-    // HELPER — extract UserPrincipal from SecurityContext
-    // Only call this on endpoints that require authentication.
-    // Do NOT call on /join/guest, /validate/*, or GET /{meetingCode}.
-    // ========================
+    // =========================================================================
+    //  HELPER — extract UserPrincipal from SecurityContext
+    //  Do NOT call on guest or public endpoints.
+    // =========================================================================
     private UserPrincipal userPrincipal() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
@@ -278,12 +384,13 @@ public class MeetingController {
         Object principal = authentication.getPrincipal();
 
         if (!(principal instanceof UserPrincipal)) {
-            log.error("Invalid principal type: {}", principal != null ? principal.getClass().getName() : "null");
+            log.error("Invalid principal type: {}",
+                    principal != null ? principal.getClass().getName() : "null");
             throw new RuntimeException("Invalid authentication principal");
         }
 
-        UserPrincipal userPrincipal = (UserPrincipal) principal;
-        log.debug("Authenticated user: {} (ID: {})", userPrincipal.getEmail(), userPrincipal.getUserId());
-        return userPrincipal;
+        UserPrincipal up = (UserPrincipal) principal;
+        log.debug("Authenticated user: {} (ID: {})", up.getEmail(), up.getUserId());
+        return up;
     }
 }
