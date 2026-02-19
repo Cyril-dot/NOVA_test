@@ -5,52 +5,70 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Configuration for Jitsi Meet integration.
+ * Configuration for JaaS (8x8.vc) integration.
  *
- * Required in your .env / deployment environment:
- *   JITSI_DOMAIN        → e.g. meet.jit.si  (or your self-hosted domain)
- *   JITSI_APP_ID        → your Jitsi app id (if using jaas.8x8.vc)
- *   JITSI_API_KEY_ID    → key id for JWT signing
- *   JITSI_PRIVATE_KEY   → RS256 private key PEM (for JWT, optional for public meet.jit.si)
+ * Required application.properties / environment variables:
  *
- * For public meet.jit.si, only JITSI_DOMAIN is required.
+ *   jitsi.domain          = 8x8.vc
+ *   jitsi.app.id          = vpaas-magic-cookie-7eca117a3c424c7bb5c5787891573dbf
+ *   jitsi.api.key.id      = vpaas-magic-cookie-7eca117a3c424c7bb5c5787891573dbf/xxxxxx
+ *   jitsi.private.key     = <base64 PKCS8 private key — no headers needed>
+ *   jitsi.jwt.enabled     = true
+ *   jitsi.room.expiry-hours = 2
+ *
+ * The private key value can be:
+ *   - Raw base64 string (no PEM headers) — what JaaS downloads as
+ *   - Full PEM block (-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----)
+ *   Both formats are handled by JitsiMeetingService#loadPrivateKey()
  */
 @Configuration
 @Getter
 public class JitsiMeetingConfig {
 
-    @Value("${jitsi.domain:meet.jit.si}")
+    /** JaaS domain — always 8x8.vc */
+    @Value("${jitsi.domain:8x8.vc}")
     private String domain;
 
-    /** App ID — required only for JaaS (8x8.vc). Leave blank for public meet.jit.si */
+    /** Your JaaS AppID from the console */
     @Value("${jitsi.app.id:}")
     private String appId;
 
-    /** API key id — required only for JaaS JWT auth */
+    /**
+     * API key ID in the format: <AppID>/<keyId>
+     * e.g. vpaas-magic-cookie-7eca117a3c424c7bb5c5787891573dbf/abc123
+     * This goes into the JWT header as "kid"
+     */
     @Value("${jitsi.api.key.id:}")
     private String apiKeyId;
 
-    /** RS256 private key PEM — required only for JaaS JWT auth */
+    /**
+     * RS256 private key — either raw base64 or full PEM.
+     * Store as env var JITSI_PRIVATE_KEY to keep it out of source control.
+     */
     @Value("${jitsi.private.key:}")
     private String privateKey;
 
-    /** Whether JWT tokens are required (true for JaaS, false for public meet.jit.si) */
-    @Value("${jitsi.jwt.enabled:false}")
+    /** Always true for JaaS — JWT is required */
+    @Value("${jitsi.jwt.enabled:true}")
     private boolean jwtEnabled;
 
-    /** Room expiry in seconds (used for JWT exp claim) */
-    @Value("${jitsi.room.expiry-hours:24}")
+    /** Token lifetime in hours (default 2h) */
+    @Value("${jitsi.room.expiry-hours:2}")
     private long roomExpiryHours;
 
     public long getRoomExpirySeconds() {
         return roomExpiryHours * 3600L;
     }
 
+    /**
+     * Builds the JaaS room URL.
+     * Format: https://8x8.vc/<AppID>/<roomName>
+     */
     public String buildRoomUrl(String roomName) {
         if (appId != null && !appId.isBlank()) {
-            // JaaS URL format
             return "https://" + domain + "/" + appId + "/" + roomName;
         }
+        // Fallback (shouldn't happen with JaaS)
         return "https://" + domain + "/" + roomName;
     }
 }

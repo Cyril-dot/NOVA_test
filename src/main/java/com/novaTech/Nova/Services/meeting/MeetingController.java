@@ -19,6 +19,7 @@ import java.util.Map;
 public class MeetingController {
 
     private final JitsiMeetingService meetingService;
+    private final JitsiMeetingConfig  meetingConfig;
 
     // ── helpers ───────────────────────────────────────────────────────────────
     private static Map<String, Object> mapOf(Object... kv) {
@@ -30,9 +31,27 @@ public class MeetingController {
     }
 
     // ─────────────────────────────────────────────
+    // CONFIG — lets the frontend know the JaaS domain/appId
+    // GET /api/meetings/config
+    // ─────────────────────────────────────────────
+
+    @GetMapping("/config")
+    public ResponseEntity<?> getConfig() {
+        return ResponseEntity.ok(mapOf(
+            "domain", meetingConfig.getDomain(),
+            "appId",  meetingConfig.getAppId(),
+            "jwtEnabled", meetingConfig.isJwtEnabled()
+        ));
+    }
+
+    // ─────────────────────────────────────────────
     // PUBLIC
     // ─────────────────────────────────────────────
 
+    /**
+     * GET /api/meetings/{code}
+     * Returns safe (non-sensitive) room info. Used by JoinMeeting to validate a code.
+     */
     @GetMapping("/{code}")
     public ResponseEntity<?> getRoomInfo(@PathVariable String code) {
         try {
@@ -44,6 +63,8 @@ public class MeetingController {
             safe.put("url",        room.get("url"));
             safe.put("privacy",    room.get("privacy"));
             safe.put("created_at", room.get("created_at"));
+            safe.put("domain",     room.get("domain"));
+            safe.put("appId",      room.get("appId"));
             return ResponseEntity.ok(safe);
         } catch (Exception e) {
             log.error("❌ getRoomInfo error: {}", e.getMessage(), e);
@@ -51,31 +72,44 @@ public class MeetingController {
         }
     }
 
+    /**
+     * POST /api/meetings/join/guest
+     * Body: { roomCode, displayName }
+     * Returns a JaaS JWT token for an unauthenticated guest.
+     */
     @PostMapping("/join/guest")
     public ResponseEntity<?> joinAsGuest(@RequestBody Map<String, String> body) {
         try {
             String roomCode    = body.get("roomCode");
             String displayName = body.getOrDefault("displayName", "Guest");
 
-            if (roomCode == null || roomCode.isBlank())
+            if (roomCode == null || roomCode.isBlank()) {
                 return ResponseEntity.badRequest().body(mapOf("error", "roomCode is required"));
+            }
 
-            // For public Jitsi — auto-create room if it doesn't exist yet
+            // Auto-create room if it doesn't exist
             Map<String, Object> room = meetingService.getRoom(roomCode);
             if (room == null) {
-                log.info("🔧 [Jitsi] Guest join: room '{}' not found — auto-creating", roomCode);
+                log.info("🔧 [JaaS] Guest join: room '{}' not found — auto-creating", roomCode);
                 room = meetingService.createRoom(roomCode, false);
             }
 
             Map<String, Object> tokenData = meetingService.createGuestToken(roomCode, displayName);
             tokenData.put("roomCode", roomCode);
+            tokenData.put("domain",   meetingConfig.getDomain());
+            tokenData.put("appId",    meetingConfig.getAppId());
             return ResponseEntity.ok(tokenData);
+
         } catch (Exception e) {
             log.error("❌ joinAsGuest error: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body(mapOf("error", e.getMessage()));
         }
     }
 
+    /**
+     * GET /api/meetings/validate/{token}
+     * Lightweight token validation stub (extend if needed).
+     */
     @GetMapping("/validate/{token}")
     public ResponseEntity<?> validateToken(@PathVariable String token) {
         return ResponseEntity.ok(mapOf("valid", true, "token", token));
@@ -85,23 +119,35 @@ public class MeetingController {
     // AUTHENTICATED
     // ─────────────────────────────────────────────
 
+    /**
+     * POST /api/meetings/create
+     * Body: { roomName, private? }
+     * Creates a new room and returns room metadata.
+     */
     @PostMapping("/create")
     public ResponseEntity<?> createRoom(
             @RequestBody Map<String, Object> body,
             @AuthenticationPrincipal UserDetails principal) {
         try {
-            String  roomName  = (String) body.getOrDefault("roomName", null);
+            String  roomName  = (String)  body.getOrDefault("roomName", null);
             boolean isPrivate = Boolean.TRUE.equals(body.get("private"));
 
             Map<String, Object> room = meetingService.createRoom(roomName, isPrivate);
             log.info("✅ Room created by '{}': {}", principal.getUsername(), room.get("name"));
             return ResponseEntity.ok(room);
+
         } catch (Exception e) {
             log.error("❌ createRoom error: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body(mapOf("error", e.getMessage()));
         }
     }
 
+    /**
+     * POST /api/meetings/{code}/token
+     * Body: { isOwner? }
+     * Returns a JaaS JWT for an authenticated user.
+     * The token includes domain + appId so the frontend knows which JaaS instance to use.
+     */
     @PostMapping("/{code}/token")
     public ResponseEntity<?> getMeetingToken(
             @PathVariable String code,
@@ -110,7 +156,7 @@ public class MeetingController {
         try {
             boolean isModerator = body != null && Boolean.TRUE.equals(body.get("isOwner"));
 
-            // Auto-create room if it doesn't exist (handles rejoins after server restart)
+            // Auto-create room if missing (handles server restarts)
             Map<String, Object> room = meetingService.getRoom(code);
             if (room == null) {
                 log.info("🔧 Room '{}' not in store — auto-creating for token request", code);
@@ -119,14 +165,22 @@ public class MeetingController {
 
             Map<String, Object> tokenData = meetingService.createMeetingToken(
                     code, principal.getUsername(), principal.getUsername(), isModerator);
-            tokenData.put("isOwner", isModerator);
+
+            tokenData.put("isOwner",  isModerator);
+            tokenData.put("domain",   meetingConfig.getDomain());
+            tokenData.put("appId",    meetingConfig.getAppId());
             return ResponseEntity.ok(tokenData);
+
         } catch (Exception e) {
             log.error("❌ getMeetingToken error: {}", e.getMessage(), e);
             return ResponseEntity.status(500).body(mapOf("error", e.getMessage()));
         }
     }
 
+    /**
+     * DELETE /api/meetings/{code}
+     * Deletes a room from the store.
+     */
     @DeleteMapping("/{code}")
     public ResponseEntity<?> deleteRoom(
             @PathVariable String code,
@@ -141,6 +195,10 @@ public class MeetingController {
         }
     }
 
+    /**
+     * GET /api/meetings/{code}/presence
+     * Returns whether the room is active.
+     */
     @GetMapping("/{code}/presence")
     public ResponseEntity<?> getPresence(@PathVariable String code) {
         try {
@@ -151,6 +209,10 @@ public class MeetingController {
         }
     }
 
+    /**
+     * GET /api/meetings?limit=20&room=xyz
+     * Lists rooms (optionally filtered by name).
+     */
     @GetMapping
     public ResponseEntity<?> listMeetings(
             @RequestParam(defaultValue = "20") int limit,
@@ -160,7 +222,6 @@ public class MeetingController {
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("❌ listMeetings error: {}", e.getMessage(), e);
-            // Return empty list — never 500 on this endpoint
             Map<String, Object> empty = new HashMap<>();
             empty.put("total_count", 0);
             empty.put("data", new ArrayList<>());
@@ -168,6 +229,10 @@ public class MeetingController {
         }
     }
 
+    /**
+     * POST /api/meetings/{code}/eject
+     * Body: { participantIds: [id1, id2] }
+     */
     @PostMapping("/{code}/eject")
     public ResponseEntity<?> ejectParticipants(
             @PathVariable String code,
@@ -175,8 +240,9 @@ public class MeetingController {
         try {
             @SuppressWarnings("unchecked")
             List<String> ids = (List<String>) body.get("participantIds");
-            if (ids == null || ids.isEmpty())
+            if (ids == null || ids.isEmpty()) {
                 return ResponseEntity.badRequest().body(mapOf("error", "participantIds required"));
+            }
             meetingService.ejectParticipants(code, ids);
             return ResponseEntity.ok(mapOf("ejected", ids.size()));
         } catch (Exception e) {
@@ -185,6 +251,10 @@ public class MeetingController {
         }
     }
 
+    /**
+     * POST /api/meetings/{code}/message
+     * Body: { data: {...}, recipient?: "*" }
+     */
     @PostMapping("/{code}/message")
     public ResponseEntity<?> sendMessage(
             @PathVariable String code,
@@ -193,8 +263,9 @@ public class MeetingController {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) body.get("data");
             String recipient = (String) body.getOrDefault("recipient", "*");
-            if (data == null)
+            if (data == null) {
                 return ResponseEntity.badRequest().body(mapOf("error", "data is required"));
+            }
             meetingService.sendAppMessage(code, data, recipient);
             return ResponseEntity.ok(mapOf("sent", true));
         } catch (Exception e) {
@@ -203,6 +274,9 @@ public class MeetingController {
         }
     }
 
+    /**
+     * POST /api/meetings/{code}/recording/start
+     */
     @PostMapping("/{code}/recording/start")
     public ResponseEntity<?> startRecording(@PathVariable String code) {
         try {
@@ -213,6 +287,9 @@ public class MeetingController {
         }
     }
 
+    /**
+     * POST /api/meetings/{code}/recording/stop
+     */
     @PostMapping("/{code}/recording/stop")
     public ResponseEntity<?> stopRecording(@PathVariable String code) {
         try {
