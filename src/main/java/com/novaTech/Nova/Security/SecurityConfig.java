@@ -91,7 +91,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/meetings/daily-token/guest").permitAll()
                         .requestMatchers("/api/meetings/validate/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/meetings/{code}").permitAll()
-
+                        // In your Security Config, add this to the permitted endpoints:
+                        .requestMatchers("/ping").permitAll()
                         // 🔒 All other meeting endpoints require authentication
                         .requestMatchers("/api/meetings/**").authenticated()
 
