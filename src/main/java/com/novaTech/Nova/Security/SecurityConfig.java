@@ -36,7 +36,7 @@ public class SecurityConfig {
     private final OncePerRequestFilterService oncePerRequestFilterService;
     private final RateLimitFilter rateLimitFilter;
 
-    @Value("${app.frontend-url:https://novaspace-3xjlmad36-cyril-dots-projects.vercel.app}")
+    @Value("${app.frontend-url:https://ragna.lovable.app}")
     private String frontendUrl;
 
     public SecurityConfig(TokenService tokenService,
