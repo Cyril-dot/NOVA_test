@@ -14,7 +14,7 @@ public class Scheduler {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    private static final String RENDER_URL = "https://nova-test-ctne.onrender.com/ping";
+    private static final String RENDER_URL = "https://nova-test-yihm.onrender.com/ping";
 
     // Ping every 5 minutes (300,000 ms)
     @Scheduled(fixedRate = 300000)
